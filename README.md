@@ -343,3 +343,25 @@ and matching output-crop view survive into `segments[].semantic_evidence`.
 Screen depictions do not count as visiting an event. The intro is 1–2 lines,
 under 90 characters; uncertain/missing subjects use a neutral disclosed fallback.
 No locations or specific events are extracted from the Goal or filenames.
+
+### Static demo scoreboard (no server)
+
+```sh
+.venv/bin/framefoundry scoreboard --html out.html
+# Optional, presenter-controlled assumption; omitted means “not measured”.
+.venv/bin/framefoundry scoreboard --html out.html --assume-manual-minutes-per-episode 15
+open out.html  # Mac; any browser can open the file directly
+```
+
+The single HTML file embeds its CSS and SVG chart; it makes no page-view network
+requests. Export from the Mac containing the live episodes/evals to populate the
+az-0500 → az-0550 → az-0600 → az-0700 trend. Missing artifacts remain N/A.
+Factory history combines current git/optional generation-time GitHub data with
+an audited WO timestamp snapshot. Ticket-to-PR is explicitly **first recorded PR
+title coverage**, not completion; WO-7 uses its later title-addition event.
+Render QA rate uses known latest QA artifacts; shipped means a hash-matching local
+export passing QA and evaluation gates, not a social publication or merged PR.
+AI cost per shipped episode includes failed-episode cohort overhead and exposes
+unknown billing. The manual-minutes flag estimates gross manual editing effort
+avoided at N minutes × shipped episodes / 60, assuming zero hands-on automatic
+editing and excluding prep/review/debugging; it is not measured engineer labor.

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import sys
 import tempfile
@@ -33,6 +34,16 @@ def _episode(root,episode_id):
 def _common(p):
     p.add_argument('--episodes-root', type=Path, default=REPO / 'episodes')
     p.add_argument('--evals-root', type=Path, default=Path(os.environ.get('FRAMEFOUNDRY_EVALS_ROOT',REPO/'evals')))
+
+
+def _positive_minutes(value):
+    try:
+        number = float(value)
+    except (ValueError, TypeError):
+        raise argparse.ArgumentTypeError('manual minutes must be positive and finite') from None
+    if not math.isfinite(number) or number <= 0:
+        raise argparse.ArgumentTypeError('manual minutes must be positive and finite')
+    return number
 
 
 def _parser():
@@ -69,6 +80,9 @@ def _parser():
     s = sub.add_parser('scoreboard', help='summarise evals/scoreboard.jsonl')
     _common(s)
     s.add_argument('--table', action='store_true', help='read-only terminal demo table with actual QA status')
+    s.add_argument('--html', type=Path, metavar='OUT.html', help='export one offline HTML scoreboard')
+    s.add_argument('--assume-manual-minutes-per-episode', type=_positive_minutes, default=None,
+                   help='HTML only: explicit manual editing minutes per teaser assumption')
     s.add_argument('--json', action='store_true')
     s.add_argument('--lines', action='store_true', help='print the raw scoreboard lines (whole reports)')
     s.add_argument('--baseline', type=Path, help='baseline scoreboard JSONL (e.g. from main) to compare mean Q against')
@@ -147,16 +161,47 @@ def _rate(a, input_fn, interactive):
 
 
 def _scoreboard(a):
+    if a.html and (a.table or a.lines or a.json):
+        raise EvalToolError('--html cannot be combined with --table, --lines, or --json')
+    if a.assume_manual_minutes_per_episode is not None and not a.html:
+        raise EvalToolError('--assume-manual-minutes-per-episode requires --html')
     if a.table and (a.json or a.lines):
         raise EvalToolError('--table cannot be combined with --json or --lines')
     scoreboard_path = a.evals_root / tools.SCOREBOARD_NAME
-    input_unavailable = a.table and scoreboard_path.exists() and not scoreboard_path.is_file()
+    if a.html and (scoreboard_path.is_symlink() or (a.baseline and a.baseline.is_symlink())):
+        raise EvalToolError('HTML input JSONL symlinks are not allowed')
+    input_unavailable = (a.table or a.html) and scoreboard_path.exists() and not scoreboard_path.is_file()
     try:
         reports, bad = tools.load_reports(a.evals_root)
     except OSError:
-        if not a.table:
+        if not (a.table or a.html):
             raise
         reports, bad, input_unavailable = [], 0, True
+    if a.html:
+        from .scoreboard_html import export_html, render_html
+        from .demo_scoreboard import validated_reports
+        comparison = None
+        code = EXIT_UNAVAILABLE if input_unavailable else EXIT_OK
+        if a.baseline:
+            try:
+                base, _ = tools.read_jsonl(a.baseline)
+            except OSError:
+                base = []
+            current, _ = validated_reports(reports)
+            baseline, _ = validated_reports(base)
+            comparison = tools.compare_baseline(current, baseline, tolerance=a.tolerance)
+            if not input_unavailable:
+                code = tools.compare_exit_code(comparison)
+        try:
+            document = render_html(reports, episodes_root=a.episodes_root, unreadable_lines=bad,
+                                   input_unavailable=input_unavailable,
+                                   assume_manual_minutes_per_episode=a.assume_manual_minutes_per_episode,
+                                   baseline=comparison)
+            export_html(a.html, document, episodes_root=a.episodes_root,
+                        input_paths=[scoreboard_path, *([a.baseline] if a.baseline else [])])
+        except ValueError as exc:
+            raise EvalToolError(str(exc)) from None
+        return code
     if a.table:
         from .demo_scoreboard import render_table, validated_reports
         print(render_table(reports, episodes_root=a.episodes_root, unreadable_lines=bad,

@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "fetched_at": "2026-11-14T14:40:16.234127+00:00",
+  "notes": [
+    "Audited source values supplied by the parent implementation task: Factory tools confirmed seven work orders and their creation timestamps on 2026-11-14; all seven were In Review, not done.",
+    "GitHub PR #1 initial title explicitly covered WO-1 through WO-6. Its recorded rename event at 2026-11-14T09:17:31Z added WO-7. First-recorded-title coverage is a proxy, not implementation, completion, or merge time.",
+    "First coverage is frozen to audited evidence, not inferred from current title, git history, or PR open time for later tickets. No git commits are mapped to tickets.",
+    "GitHub current commit count and state were not supplied in the audit and remain null unless generation-time gh REST verifies them. This snapshot is not live Mac episode data."
+  ],
+  "pull_request": {
+    "number": 1,
+    "url": "https://github.com/mappmechanic/frame-foundry/pull/1",
+    "created_at": "2026-11-14T07:10:12Z",
+    "commits": null,
+    "state": null
+  },
+  "work_orders": [
+    {
+      "id": "WO-1",
+      "url": "https://factory.8090.ai/project/a54860bf-bf30-42d7-b6a8-a08af85c454c/work-orders/1",
+      "status": "In Review",
+      "created_at": "2026-11-14T06:24:25.067200Z",
+      "first_coverage_at": "2026-11-14T07:10:12Z",
+      "coverage_basis": "initial PR title at open",
+      "coverage_source": "https://github.com/mappmechanic/frame-foundry/pull/1"
+    },
+    {
+      "id": "WO-2",
+      "url": "https://factory.8090.ai/project/a54860bf-bf30-42d7-b6a8-a08af85c454c/work-orders/2",
+      "status": "In Review",
+      "created_at": "2026-11-14T06:24:42.437580Z",
+      "first_coverage_at": "2026-11-14T07:10:12Z",
+      "coverage_basis": "initial PR title at open",
+      "coverage_source": "https://github.com/mappmechanic/frame-foundry/pull/1"
+    },
+    {
+      "id": "WO-3",
+      "url": "https://factory.8090.ai/project/a54860bf-bf30-42d7-b6a8-a08af85c454c/work-orders/3",
+      "status": "In Review",
+      "created_at": "2026-11-14T06:25:04.998576Z",
+      "first_coverage_at": "2026-11-14T07:10:12Z",
+      "coverage_basis": "initial PR title at open",
+      "coverage_source": "https://github.com/mappmechanic/frame-foundry/pull/1"
+    },
+    {
+      "id": "WO-4",
+      "url": "https://factory.8090.ai/project/a54860bf-bf30-42d7-b6a8-a08af85c454c/work-orders/4",
+      "status": "In Review",
+      "created_at": "2026-11-14T06:25:24.695178Z",
+      "first_coverage_at": "2026-11-14T07:10:12Z",
+      "coverage_basis": "initial PR title at open",
+      "coverage_source": "https://github.com/mappmechanic/frame-foundry/pull/1"
+    },
+    {
+      "id": "WO-5",
+      "url": "https://factory.8090.ai/project/a54860bf-bf30-42d7-b6a8-a08af85c454c/work-orders/5",
+      "status": "In Review",
+      "created_at": "2026-11-14T06:25:48.882204Z",
+      "first_coverage_at": "2026-11-14T07:10:12Z",
+      "coverage_basis": "initial PR title at open",
+      "coverage_source": "https://github.com/mappmechanic/frame-foundry/pull/1"
+    },
+    {
+      "id": "WO-6",
+      "url": "https://factory.8090.ai/project/a54860bf-bf30-42d7-b6a8-a08af85c454c/work-orders/6",
+      "status": "In Review",
+      "created_at": "2026-11-14T06:26:30.003058Z",
+      "first_coverage_at": "2026-11-14T07:10:12Z",
+      "coverage_basis": "initial PR title at open",
+      "coverage_source": "https://github.com/mappmechanic/frame-foundry/pull/1"
+    },
+    {
+      "id": "WO-7",
+      "url": "https://factory.8090.ai/project/a54860bf-bf30-42d7-b6a8-a08af85c454c/work-orders/7",
+      "status": "In Review",
+      "created_at": "2026-11-14T08:05:34.078953Z",
+      "first_coverage_at": "2026-11-14T09:17:31Z",
+      "coverage_basis": "recorded PR title rename event",
+      "coverage_source": "https://github.com/mappmechanic/frame-foundry/pull/1"
+    }
+  ]
+}
