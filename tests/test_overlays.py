@@ -42,7 +42,7 @@ def test_grounded_fallback_omits_unsupported_section_and_fits_cuts(tmp_path,monk
     assert any('section 1 omitted' in x for x in spec['overlays']['limitations'])
     for c in cards:
         assert c['y']>=1920*.12 and c['y']+c['height']+8<=1920/3
-        assert (c['end_frame']-c['start_frame']-len(c['cut_frames']))/30-.5>=2.5
+        assert overlays.readable_frames(c['start_frame'],c['end_frame'],c['cut_frames'])>=75
         assert not c['start_frame']<=90<c['end_frame'] or 90 in c['cut_frames']
 
 
@@ -206,3 +206,49 @@ def test_section_label_never_bridges_ungrounded_clip(tmp_path,monkeypatch):
 def test_large_landscape_title_uses_fitting_upper_third_layout():
     card=overlays.layout('Things to do in Sedona with Kids',1920,1080)
     assert card['cap_height']>=65 and card['y']+card['height']+8<=360
+
+
+def test_first_grounded_short_intervals_show_both_section_cards(tmp_path,monkeypatch):
+    _,spec,analysis,_=setup_plan(tmp_path,monkeypatch,False)
+    spec['segments']=[selection('a',0,4000,'opening'),
+        selection('b',0,3066,'halloween'),selection('a',5000,8066,'resort'),
+        selection('b',6000,9000,'outro')]
+    spec['target_duration_ms']=13132
+    analysis['words']=[dict(source_id='b',text='costumes',start_ms=1000,end_ms=1100,confidence=1),
+        dict(source_id='a',text='pool',start_ms=5500,end_ms=5600,confidence=1)]
+    timeline,amended=assembler.build_timeline(spec,analysis)
+    compiled=overlays.compile_cards(amended,analysis,timeline,tmp_path)
+    cards=compiled['overlays']['cards']
+    assert [c['kind'] for c in cards]==['title','section','section']
+    assert '1. Halloween' in cards[1]['text'] and '2. Hilton' in cards[2]['text']
+    assert [c['shot_id'] for c in cards[1:]]==['shot-02','shot-03']
+    assert not any('omitted:' in x for x in compiled['overlays']['limitations'])
+    assert all(overlays.readable_frames(c['start_frame'],c['end_frame'],c['cut_frames'])>=75 for c in cards)
+    # Previously both slots failed: masks in their fades were subtracted twice.
+    assert all((c['end_frame']-c['start_frame']-len(c['cut_frames']))/30-.5<2.5 for c in cards[1:])
+    for c in cards[1:]:
+        assert c['start_frame'] in c['cut_frames'] and c['end_frame']-1 in c['cut_frames']
+    receipt=tmp_path/'receipt.mp4';receipt.write_bytes(b'test-only')
+    compiled['overlays']['render_sha256']=overlays.filehash(receipt)
+    checks=overlays.verify(compiled,receipt,[4000,212/30*1000,304/30*1000],394/30*1000)
+    assert all(c['status']=='pass' for c in checks)
+
+
+def test_later_reserved_card_does_not_hide_earlier_grounded_slot(tmp_path,monkeypatch):
+    _,spec,analysis,_=setup_plan(tmp_path,monkeypatch,False)
+    spec['segments']=[selection('a',0,4000,'opening'),selection('b',0,4000,'resort'),
+                      selection('a',5000,9000,'mixed')]
+    spec['target_duration_ms']=12000
+    analysis['words']=[dict(source_id='b',text='pool',start_ms=1000,end_ms=1100,confidence=1),
+        dict(source_id='a',text='costumes pool',start_ms=5500,end_ms=5600,confidence=1)]
+    timeline,amended=assembler.build_timeline(spec,analysis)
+    cards=overlays.compile_cards(amended,analysis,timeline,tmp_path)['overlays']['cards']
+    assert len(cards)==3
+    assert cards[1]['shot_id']=='shot-03' and cards[2]['shot_id']=='shot-02'
+    assert cards[2]['end_frame']<=cards[1]['start_frame']
+
+
+def test_only_stationary_cut_masks_reduce_readable_hold():
+    assert overlays.readable_frames(0,91,[0,1,89,90])==75
+    assert overlays.readable_frames(0,91,[44,45,46])==72
+    assert list(overlays.free_intervals(0,240,[(150,241),(0,30)]))==[(31,150)]
