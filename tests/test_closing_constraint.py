@@ -205,3 +205,31 @@ def test_existing_separate_quality_timestamp_survives_regeneration():
     c = next(c for c in short_candidates(a,[base]) if c['source_id']==source['source_id'] and c['frame_in_window'])
     assert c['quality_frame_time_ms'] is None
     assert not closing_qualifies(c,segment(c),['scenic_wide'])
+
+
+def test_two_unused_people_windows_can_replace_weak_tail():
+    pool = analysis()['candidates']
+    hook = evidence(pool[1])
+    payoffs = [evidence(pool[-1]), evidence(pool[-8])]
+    for c in payoffs:
+        c['quality']['visual_score'] = -1000
+    result = run(pool,[segment(hook)])
+    assert result['segments'][0] == segment(hook)
+    assert all(matching(pool,s) in payoffs for s in result['segments'][-2:])
+    assert not any('Closing constraint' in l for l in result['coverage']['limitations'])
+
+
+def test_touching_same_source_payoffs_are_ordered_without_coalescing():
+    from pipelines.ffmpeg.teaser_edit import enforce_closing
+    base = analysis()['candidates'][1]
+    entries = []
+    for i in range(5):
+        c = deepcopy(base)
+        c.update(candidate_id=str(i), start_ms=10000+i*2500, end_ms=12500+i*2500)
+        if i >= 3:
+            evidence(c)
+        entries.append((c,segment(c),()))
+    ordered = enforce_closing(entries,[],{},set())
+    assert ordered[0] is entries[0]
+    assert all(closing_qualifies(c,s,l) for c,s,l in ordered[-2:])
+    assert all(a[1]['raw_end_ms'] != b[1]['raw_start_ms'] for a,b in zip(ordered,ordered[1:]))
