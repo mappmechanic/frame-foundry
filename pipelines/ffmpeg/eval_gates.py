@@ -737,12 +737,12 @@ def _voiceover_check(root,spec,render,checks):
     if not vo:return
     try:
         from .voiceover import _hash,intro_text
-        from .semantics import validate_evidence,intro_v1,intro_v2
+        from .semantics import validate_evidence,intro_v1,intro_v2,intro_v3
         validate_evidence(spec,root=root)
         legacy={'A few moments from our family trip.\nShared memories, together.','A few highlights from our footage.\nMemories worth revisiting.'}
         version=vo.get('grounding_version')
-        if version not in (None,'subjects-v1','subjects-v2','subjects-v3'):raise ValueError('Unknown narration grounding version')
-        expected={intro_v1(spec)} if version=='subjects-v1' else {intro_v2(spec)} if version=='subjects-v2' else {intro_text(spec)} if version=='subjects-v3' else legacy|{intro_v1(spec)}
+        if version not in (None,'subjects-v1','subjects-v2','subjects-v3','subjects-v4'):raise ValueError('Unknown narration grounding version')
+        expected={intro_v1(spec)} if version=='subjects-v1' else {intro_v2(spec)} if version=='subjects-v2' else {intro_v3(spec)} if version=='subjects-v3' else {intro_text(spec)} if version=='subjects-v4' else legacy|{intro_v1(spec)}
         if vo['text'] not in expected:raise ValueError('VO text differs from retained semantic evidence')
         import opentimelineio as otio
         path=(root/vo['path']).resolve()
@@ -755,7 +755,8 @@ def _voiceover_check(root,spec,render,checks):
         seconds=float(info['format']['duration'])
         if not math.isfinite(seconds):raise ValueError('Nonfinite narration duration')
         duration=round(seconds*1000)
-        if not render or not 0<duration<=min(10000,render['duration_ms']) or abs(duration-vo['duration_ms'])>50 or vo['start_ms']!=0:
+        limit=2990 if version=='subjects-v4' else 10000
+        if not render or not 0<duration<=min(limit,render['duration_ms']) or abs(duration-vo['duration_ms'])>50 or vo['start_ms']!=0:
             raise ValueError('VO duration/placement would clip narration')
         checks['voiceover_integrity']=check('voiceover_integrity','pass',None,
             dict(duration_ms=duration,start_ms=0,segments=1,sha256=vo['sha256'],note='One complete intro; technical timing/hash only, not semantic intelligibility'))

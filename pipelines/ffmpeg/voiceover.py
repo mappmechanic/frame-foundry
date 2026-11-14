@@ -9,6 +9,9 @@ from .render import probe_media,_run,_ffmpeg
 VOICE='21m00Tcm4TlvDq8ikWAM'  # Rachel, official premade Get-voice example.
 MODEL='eleven_flash_v2_5'
 MAX_BYTES=2_000_000
+SHORT_MAX_MS=2990
+SHORT_TARGET_SECONDS=2.9
+MAX_TEMPO=1.35
 
 
 def intro_text(spec):
@@ -34,13 +37,31 @@ def configuration():
     return key,voice,model,rate
 
 
+def _fit_short_intro(path):
+    """Measure and gently speed up the whole utterance; never trim words or retry TTS."""
+    seconds=float(probe_media(path)['format']['duration'])
+    if not math.isfinite(seconds) or seconds<=0:raise ValueError('Invalid narration duration')
+    if seconds*1000<=SHORT_MAX_MS:return
+    factor=seconds/SHORT_TARGET_SECONDS
+    if factor>MAX_TEMPO:raise ValueError('Narration exceeds gentle tempo bound; no clipping or paid retry')
+    shorter=path.with_name('intro-short.mp3')
+    try:
+        _run(_ffmpeg()+['-i',str(path),'-af',f'atempo={factor:.9f}','-c:a','libmp3lame','-b:a','128k','-ar','44100',str(shorter)])
+        actual=float(probe_media(shorter)['format']['duration'])
+        if not math.isfinite(actual) or not 0<actual*1000<=SHORT_MAX_MS:raise ValueError('Narration still exceeds short timing bound')
+        shorter.replace(path)
+    finally:
+        shorter.unlink(missing_ok=True)
+
+
 def prepare_intro(ctx,spec,*,transport=None):
     key,voice,model,rate=configuration()
-    from .semantics import validate_evidence
+    from .semantics import validate_evidence,attach_place
+    attach_place(spec,ctx.episode_dir)
     try:validate_evidence(spec,root=ctx.episode_dir)
     except (ValueError,KeyError,TypeError,OSError):raise StageError('VOICEOVER_INVALID','assembler','Narration subject evidence invalid') from None
     text=intro_text(spec);settings=dict(stability=.5,similarity_boost=.75)
-    identity=dict(protocol='intro-vo-1',text=text,voice_id=voice,model=model,settings=settings,output_format='mp3_44100_128')
+    identity=dict(protocol='intro-vo-2-under-3s',text=text,voice_id=voice,model=model,settings=settings,output_format='mp3_44100_128')
     digest=hashlib.sha256(json.dumps(identity,sort_keys=True).encode()).hexdigest()
     cache=Path(os.environ.get('FRAMEFOUNDRY_CACHE_DIR',str(Path(__file__).resolve().parents[2]/'.inference-cache')))/'voiceover'
     mp3=cache/(digest+'.mp3');meta=cache/(digest+'.json')
@@ -77,6 +98,7 @@ def prepare_intro(ctx,spec,*,transport=None):
             else:row.update(status='failed',reserved_usd=reservation,error='TTS request did not complete')
             ledger['calls'].append(row.copy());atomic_write_json(ledger_path,ledger)
         if stop:raise accounting.ProviderBudgetError(stop)
+        fitting=False
         try:
             status,audio=(transport or accounting._transport)(
                 'https://api.elevenlabs.io/v1/text-to-speech/'+voice+'?output_format=mp3_44100_128',
@@ -85,11 +107,14 @@ def prepare_intro(ctx,spec,*,transport=None):
             if status!=200 or not isinstance(audio,bytes) or not 0<len(audio)<=MAX_BYTES:raise ValueError()
             row.update(cost_usd=reservation,cost_status='estimated')
             target.write_bytes(audio)
+            fitting=True
+            _fit_short_intro(target)
+            fitting=False
             duration=float(probe_media(target)['format']['duration'])
-            if not math.isfinite(duration) or not 0<duration<=10 or duration*1000>spec['target_duration_ms']:raise ValueError()
+            if not math.isfinite(duration) or not 0<duration*1000<=SHORT_MAX_MS or duration*1000>spec['target_duration_ms']:raise ValueError()
             row.update(status='success',error=None,audio_sha256=_hash(target))
         except Exception:
-            row.update(status='failed',error='ElevenLabs TTS failed or returned invalid/oversized intro audio')
+            row.update(status='failed',error='Narration cannot fit under 3s within the 1.35x whole-utterance tempo bound; no clipping or paid retry' if fitting else 'ElevenLabs TTS failed or returned invalid/oversized intro audio')
         with accounting._ledger_lock(ctx.episode_dir):
             ledger=accounting._strict_json(ledger_path.read_text())
             ledger['calls'][-1]=row;atomic_write_json(ledger_path,ledger)
@@ -100,9 +125,9 @@ def prepare_intro(ctx,spec,*,transport=None):
             temporary.replace(mp3);atomic_write_json(meta,dict(identity=identity,sha256=_hash(mp3),historical_usage=row))
         except OSError:pass  # A valid paid result must not be lost to cache failure.
     info=probe_media(target);duration_ms=round(float(info['format']['duration'])*1000)
-    if not 0<duration_ms<=min(10000,spec['target_duration_ms']):raise StageError('VOICEOVER_INVALID','assembler','Cached intro exceeds duration budget')
+    if not 0<duration_ms<=min(SHORT_MAX_MS,spec['target_duration_ms']):raise StageError('VOICEOVER_INVALID','assembler','Cached intro exceeds duration budget')
     return dict(text=text,path=str(target.relative_to(ctx.episode_dir)),sha256=_hash(target),start_ms=0,duration_ms=duration_ms,
-                voice_id=voice,model=model,cached=cached,duck_db=-10,grounding_version='subjects-v3')
+                voice_id=voice,model=model,cached=cached,duck_db=-10,grounding_version='subjects-v4')
 
 
 def mix_intro(joined,voiceover,episode_dir,total_seconds):

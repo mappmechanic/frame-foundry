@@ -26,7 +26,7 @@ def prepare(tmp_path,audio,monkeypatch):
 
 def test_intro_cache_and_cost_are_shared(tmp_path,audio,monkeypatch):
     spec,_,intro,calls=prepare(tmp_path,audio,monkeypatch)
-    assert len(calls)==1 and intro['start_ms']==0 and '\n' not in intro['text'] and intro['text'].endswith('.')
+    assert len(calls)==1 and intro['start_ms']==0 and '\n' not in intro['text'] and intro['text'].endswith('!')
     assert json.loads(calls[0][2])['model_id']=='eleven_flash_v2_5'
     row=read_json(tmp_path/'tts-usage.json')['calls'][0]
     assert row['status']=='success' and row['cost_status']=='estimated' and row['cost_usd']>0
@@ -197,7 +197,85 @@ def test_historical_subjects_v2_still_evaluates_after_sentence_writer(tmp_path,a
     checks={};eval_gates._voiceover_check(tmp_path,spec,dict(duration_ms=2000),checks)
     assert checks['voiceover_integrity']['status']=='pass'
     # Historical text cannot masquerade as the new writer.
-    intro['grounding_version']='subjects-v3'
+    intro['grounding_version']='subjects-v4'
     timeline,_=build_timeline(spec,analysis);otio.adapters.write_to_file(timeline,str(tmp_path/'timeline.otio'))
+    checks={};eval_gates._voiceover_check(tmp_path,spec,dict(duration_ms=2000),checks)
+    assert checks['voiceover_integrity']['status']=='fail'
+
+
+def generated_audio(tmp_path,seconds):
+    path=tmp_path/f'long-{seconds}.mp3'
+    subprocess.run(['ffmpeg','-y','-v','error','-f','lavfi','-i',f'sine=frequency=700:sample_rate=44100:duration={seconds}',
+                    '-c:a','libmp3lame',str(path)],check=True,capture_output=True)
+    return path.read_bytes()
+
+
+def test_short_hook_gently_fits_full_audio_and_caches_without_another_paid_call(tmp_path,monkeypatch):
+    audio=generated_audio(tmp_path,3.5)
+    spec,_,intro,calls=prepare(tmp_path,audio,monkeypatch)
+    assert len(calls)==1 and intro['duration_ms']<3000
+    assert intro['grounding_version']=='subjects-v4'
+    path=tmp_path/intro['path']
+    assert float(vo.probe_media(path)['format']['duration'])<3
+    assert intro['sha256']==vo._hash(path)
+    assert (read_json(tmp_path/'tts-usage.json')['calls'][0]['audio_sha256'])==intro['sha256']
+    second=vo.prepare_intro(EpisodeContext('episode',tmp_path,'teaser'),spec,transport=lambda *a:pytest.fail('No paid retry'))
+    assert second['cached'] and second['sha256']==intro['sha256']
+
+
+def test_excessively_long_audio_fails_without_clipping_or_paid_retry(tmp_path,monkeypatch):
+    audio=generated_audio(tmp_path,5)
+    with pytest.raises(StageError):prepare(tmp_path,audio,monkeypatch)
+    row=read_json(tmp_path/'tts-usage.json')['calls'][0]
+    assert row['status']=='failed' and row['cost_usd']>0
+    assert len(read_json(tmp_path/'tts-usage.json')['calls'])==1
+
+
+def test_historical_subjects_v3_keeps_its_original_verifier(tmp_path,audio,monkeypatch):
+    from pipelines.ffmpeg import eval_gates,semantics
+    from pipelines.ffmpeg.assembler import build_timeline
+    import opentimelineio as otio
+    spec,analysis,intro,_=prepare(tmp_path,audio,monkeypatch)
+    intro['grounding_version']='subjects-v3';intro['text']=semantics.intro_v3(spec);spec['voiceover']=intro
+    timeline,_=build_timeline(spec,analysis);otio.adapters.write_to_file(timeline,str(tmp_path/'timeline.otio'))
+    checks={};eval_gates._voiceover_check(tmp_path,spec,dict(duration_ms=2000),checks)
+    assert checks['voiceover_integrity']['status']=='pass'
+
+
+def test_independent_gate_rejects_over_three_seconds_for_v4(tmp_path,monkeypatch):
+    from pipelines.ffmpeg import eval_gates
+    from pipelines.ffmpeg.assembler import build_timeline
+    import opentimelineio as otio
+    spec,analysis,intro,_=prepare(tmp_path,generated_audio(tmp_path,1.2),monkeypatch)
+    (tmp_path/intro['path']).write_bytes(generated_audio(tmp_path,3.1))
+    intro.update(sha256=vo._hash(tmp_path/intro['path']),duration_ms=3135);spec['voiceover']=intro
+    timeline,_=build_timeline(spec,analysis);otio.adapters.write_to_file(timeline,str(tmp_path/'timeline.otio'))
+    checks={};eval_gates._voiceover_check(tmp_path,spec,dict(duration_ms=10000),checks)
+    assert checks['voiceover_integrity']['status']=='fail'
+
+
+def test_positive_place_proof_survives_real_assembly_and_independent_gate(tmp_path,audio,monkeypatch):
+    from pipelines.ffmpeg import eval_gates
+    from pipelines.ffmpeg.contracts import atomic_write_json
+    from pipelines.ffmpeg.assembler import build_timeline
+    import opentimelineio as otio
+    monkeypatch.setenv('ELEVENLABS_API_KEY','fake')
+    spec,analysis=inputs(tmp_path,'9:16')
+    analysis['words']=[dict(source_id='original',text=t,start_ms=100+i*150,end_ms=220+i*150) for i,t in enumerate(["We're",'in','Arizona.'])]
+    atomic_write_json(tmp_path/'transcript.json',dict(words=analysis['words']))
+    intro=vo.prepare_intro(EpisodeContext('episode',tmp_path,'teaser'),spec,transport=lambda *a:(200,audio))
+    assert intro['text']=='Come explore Arizona with us!'
+    assert spec['narration_place']['source_id']=='original'
+    spec['voiceover']=intro
+    result=assemble(EpisodeContext('episode',tmp_path,'teaser'),spec,analysis)
+    timeline=otio.adapters.read_from_file(str(result.timeline_path))
+    otio.adapters.write_to_file(timeline,str(tmp_path/'timeline.otio'))
+    checks={};eval_gates._voiceover_check(tmp_path,spec,dict(duration_ms=2000),checks)
+    assert checks['voiceover_integrity']['status']=='pass'
+    stats=loudness(result.candidate_path)
+    assert -15<=float(stats['input_i'])<=-13 and float(stats['input_tp'])<=-1
+    # Editing transcript evidence invalidates the saved place, even with unchanged VO bytes.
+    analysis['words'][-1]['text']='California.'
+    atomic_write_json(tmp_path/'transcript.json',dict(words=analysis['words']))
     checks={};eval_gates._voiceover_check(tmp_path,spec,dict(duration_ms=2000),checks)
     assert checks['voiceover_integrity']['status']=='fail'

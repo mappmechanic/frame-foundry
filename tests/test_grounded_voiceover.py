@@ -52,7 +52,7 @@ def test_same_call_subjects_survive_only_with_retained_frame_evidence(tmp_path):
 
 def test_specific_labels_never_come_from_goal_or_reason():
     spec=dict(goal='Arizona Disneyland night parade market',segments=[dict(source_id='a',raw_start_ms=0,raw_end_ms=1000,reason='Night parade, Arizona')])
-    assert voiceover.intro_text(spec)=='Here are a few selected moments.'
+    assert voiceover.intro_text(spec)=='Come along for these moments!'
 
 
 def test_subject_outside_selected_frame_rejected():
@@ -105,7 +105,7 @@ def test_complete_mocked_pipeline_speaks_retained_subjects(tmp_path,monkeypatch)
     spec=json.loads((tmp_path/'episodes'/'grounded'/'narrative-spec.json').read_text())
     assert spec['voiceover']['text']==calls[0]['text']==voiceover.intro_text(spec)
     assert any(noun in calls[0]['text'].lower() for noun in ('night parade','market','street performers'))
-    assert spec['voiceover']['grounding_version']=='subjects-v3' and len(calls[0]['text'])<90
+    assert spec['voiceover']['grounding_version']=='subjects-v4' and len(calls[0]['text'])<90
     assert any(s.get('semantic_evidence') for s in spec['segments'])
     evaluation=json.loads((tmp_path/'episodes'/'grounded'/'eval-report.json').read_text())
     assert next(c for c in evaluation['gates']['checks'] if c['name']=='voiceover_integrity')['status']=='pass'
@@ -174,17 +174,63 @@ def subject_spec(tags):
 @pytest.mark.parametrize('tag',list(semantics.SUBJECTS))
 def test_single_subject_is_a_complete_sentence_not_a_bare_line(tag):
     text=voiceover.intro_text(subject_spec([tag]))
-    assert text.startswith('These selected moments highlight ')
+    assert text.startswith('Come explore ')
     assert semantics.SUBJECTS[tag] in text
-    assert '\n' not in text and text.count('.')==1 and len(text)<90
+    assert '\n' not in text and text.count('!')==1 and len(text)<90
 
 
 def test_natural_pair_names_only_two_distinctive_retained_subjects():
     spec=subject_spec(['parade','market','family_activity'])
-    assert voiceover.intro_text(spec)=='From the parade to the market, these moments stood out.'
+    assert voiceover.intro_text(spec)=='Come explore the parade and market!'
     assert semantics.intro_v2(subject_spec(['market']))=='Market.\nThe moments that stood out.'
-    assert voiceover.intro_text(subject_spec(['market']))=='These selected moments highlight the market.'
+    assert voiceover.intro_text(subject_spec(['market']))=='Come explore the market with us!'
 
 
 def test_one_distinctive_subject_does_not_pad_narration_with_generic_family():
-    assert voiceover.intro_text(subject_spec(['market','family_walk','family_activity']))=='These selected moments highlight the market.'
+    assert voiceover.intro_text(subject_spec(['market','family_walk','family_activity']))=='Come explore the market with us!'
+
+
+def place_words(text="We're in Arizona.",*,sid='a'):
+    return [dict(source_id=sid,text=t,start_ms=100+i*150,end_ms=220+i*150) for i,t in enumerate(text.split())]
+
+
+def test_place_requires_positive_retained_source_assertion_not_goal_or_filename(tmp_path):
+    import json
+    spec=subject_spec(['parade','market']);spec['goal']='Arizona trip'
+    assert 'Arizona' not in voiceover.intro_text(spec)
+    words=place_words();(tmp_path/'transcript.json').write_text(json.dumps(dict(words=words)))
+    semantics.attach_place(spec,tmp_path)
+    assert voiceover.intro_text(spec)=="Come explore Arizona's parade and market!"
+    semantics.validate_place(spec,root=tmp_path)
+    words[-1]['text']='California.'
+    (tmp_path/'transcript.json').write_text(json.dumps(dict(words=words)))
+    with pytest.raises(ValueError):semantics.validate_place(spec,root=tmp_path)
+
+
+@pytest.mark.parametrize('text',["We're not in Arizona.","We are never in Arizona.","If we are in Arizona.","They said we're in Arizona.","Maybe welcome to Arizona."])
+def test_negated_conditional_or_reported_place_is_not_trip_location(tmp_path,text):
+    import json
+    spec=subject_spec(['market'])
+    (tmp_path/'transcript.json').write_text(json.dumps(dict(words=place_words(text))))
+    semantics.attach_place(spec,tmp_path)
+    assert 'narration_place' not in spec and 'Arizona' not in voiceover.intro_text(spec)
+
+
+@pytest.mark.parametrize('case',['other_source','outside','screen','gap'])
+def test_place_assertion_must_be_contiguous_retained_non_screen_speech(tmp_path,case):
+    import json
+    spec=subject_spec(['market']);words=place_words()
+    if case=='other_source':words=place_words(sid='other')
+    if case=='outside':spec['segments'][0]['raw_end_ms']=400
+    if case=='screen':spec['segments'][0]['semantic_evidence']['labels']=['screen']
+    if case=='gap':words[-1].update(start_ms=1500,end_ms=1700);spec['segments'][0]['raw_end_ms']=2000
+    (tmp_path/'transcript.json').write_text(json.dumps(dict(words=words)))
+    semantics.attach_place(spec,tmp_path)
+    assert 'narration_place' not in spec
+
+
+def test_complex_grounded_place_hook_stays_compact():
+    spec=subject_spec(['night_parade','street_performers'])
+    spec['narration_place']=dict(name='Arizona',method='retained_transcript_assertion')
+    text=voiceover.intro_text(spec)
+    assert len(text.split())<=8 and 'Arizona' in text and 'night parade' in text and 'street performers' in text

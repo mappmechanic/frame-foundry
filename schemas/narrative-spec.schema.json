@@ -397,7 +397,50 @@
           "const": -10
         },
         "grounding_version": {
-          "enum": ["subjects-v1", "subjects-v2", "subjects-v3"]
+          "enum": [
+            "subjects-v1",
+            "subjects-v2",
+            "subjects-v3",
+            "subjects-v4"
+          ]
+        }
+      }
+    },
+    "narration_place": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "method",
+        "source_id",
+        "start_ms",
+        "end_ms",
+        "assertion"
+      ],
+      "properties": {
+        "name": {
+          "const": "Arizona"
+        },
+        "method": {
+          "const": "retained_transcript_assertion"
+        },
+        "source_id": {
+          "type": "string"
+        },
+        "start_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "end_ms": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "assertion": {
+          "enum": [
+            "we're in arizona",
+            "we are in arizona",
+            "welcome to arizona"
+          ]
         }
       }
     }

@@ -93,6 +93,7 @@ def intro_v1(spec):
 
 
 def validate_evidence(spec,analysis=None,root=None):
+    validate_place(spec,analysis,root)
     sources={s['source_id']:s for s in spec['sources']}
     for s in spec['segments']:
         e=s.get('semantic_evidence')
@@ -138,8 +139,8 @@ def intro_v2(spec):
     return joined.capitalize()+'.\nThe moments that stood out.'
 
 
-def intro(spec):
-    """One complete sentence, at most two retained evidenced subjects; no fragments."""
+def intro_v3(spec):
+    """Historical writer: one complete sentence, at most two retained evidenced subjects; no fragments."""
     subjects,labels=subjects_in(spec)
     if 'family_walk' in subjects:subjects.discard('family_activity')
     tags=[s for s in DISTINCTIVE_ORDER if s in subjects][:2]
@@ -153,3 +154,69 @@ def intro(spec):
         text=f'From {nouns[0]} to {nouns[1]}, these moments stood out.'
         if len(text)<90:return text
     return f'These selected moments highlight {nouns[0]}.'
+
+
+PLACE_ASSERTIONS=(("we're","in","arizona"),("we","are","in","arizona"),("welcome","to","arizona"))
+
+
+def _retained_place(spec,words):
+    """Conservative closed place support: explicit retained ASR assertion, not Goal."""
+    import re
+    for segment in spec.get('segments',[]):
+        if 'screen' in segment.get('semantic_evidence',{}).get('labels',[]):continue
+        source_words=sorted([w for w in words if w['source_id']==segment['source_id']],key=lambda w:w['start_ms'])
+        tokens=[re.sub(r"[^a-z']",'',w['text'].lower()) for w in source_words]
+        for i in range(len(tokens)):
+            for pattern in PLACE_ASSERTIONS:
+                selected=source_words[i:i+len(pattern)]
+                if tuple(tokens[i:i+len(pattern)])!=pattern:continue
+                if i and not source_words[i-1]['text'].rstrip().endswith(('.', '!', '?')):continue
+                if set(tokens[max(0,i-4):i]) & {'not','never','no','if','wish','maybe','perhaps','say','says','said','tv','screen','pretend',
+                    "don't",'dont',"isn't",'isnt',"wasn't",'wasnt',"can't",'cant',"won't",'wont','quote','imagine','would','could','should','hope'}:continue
+                if not (segment['raw_start_ms']<=selected[0]['start_ms'] and selected[-1]['end_ms']<=segment['raw_end_ms']):continue
+                if any(b['start_ms']-a['end_ms']>800 for a,b in zip(selected,selected[1:])):continue
+                return dict(name='Arizona',method='retained_transcript_assertion',source_id=segment['source_id'],
+                    start_ms=selected[0]['start_ms'],end_ms=selected[-1]['end_ms'],assertion=' '.join(pattern))
+    return None
+
+
+def attach_place(spec,root):
+    from .contracts import read_json
+    path=Path(root)/'transcript.json'
+    words=read_json(path).get('words',[]) if path.is_file() else []
+    spec.pop('narration_place',None)
+    place=_retained_place(spec,words)
+    if place:spec['narration_place']=place
+
+
+def validate_place(spec,analysis=None,root=None):
+    place=spec.get('narration_place')
+    if not place:return
+    if analysis is None and root is None:
+        if not any(s['source_id']==place['source_id'] and s['raw_start_ms']<=place['start_ms']<place['end_ms']<=s['raw_end_ms'] for s in spec['segments']):
+            raise ValueError('Place assertion is outside selected source range')
+        return  # Full transcript binding is checked with analysis/root before TTS and by evaluation.
+    from .contracts import read_json
+    words=read_json(Path(root)/'transcript.json')['words'] if root is not None else (analysis or {}).get('words',[])
+    if place!=_retained_place(spec,words):raise ValueError('Place lacks retained positive transcript assertion')
+
+
+def intro(spec):
+    """Compact, warm teaser hook; two subjects only when both survive as evidence."""
+    subjects,labels=subjects_in(spec)
+    if 'family_walk' in subjects:subjects.discard('family_activity')
+    tags=[s for s in DISTINCTIVE_ORDER if s in subjects][:2]
+    if not tags:tags=[s for s in SUBJECTS if s in subjects][:2]
+    nouns=[SUBJECTS[s] for s in tags]
+    if not nouns:
+        nouns=(['people'] if 'people' in labels else [])+(['scenic views'] if 'scenic_wide' in labels else [])
+    place=spec.get('narration_place')
+    located=bool(place and place.get('name')=='Arizona' and place.get('method')=='retained_transcript_assertion')
+    if not nouns:
+        return 'Come explore Arizona with us!' if located else 'Come along for these moments!'
+    joined=' and '.join(nouns[:2])
+    if located:
+        text=f"Come explore Arizona's {joined}!"
+        return text if len(text.split())<=8 else text.removeprefix('Come ')
+    article='the ' if tags and tags[0] in ('night_parade','parade','market') else ''
+    return f'Come explore {article}{joined}'+(' with us!' if len(nouns)==1 else '!')
