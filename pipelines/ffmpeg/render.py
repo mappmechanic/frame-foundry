@@ -1,5 +1,6 @@
 """Render original-source V1/A1 OTIO ranges using bounded FFmpeg processes."""
 from __future__ import annotations
+from .media_tools import media_binary
 
 import json
 import math
@@ -27,7 +28,7 @@ def _run(args):
 
 
 def probe_media(path):
-    result = _run(['ffprobe', '-v', 'error', '-show_streams', '-show_format', '-of', 'json', str(path)])
+    result = _run([media_binary('ffprobe'), '-v', 'error', '-show_streams', '-show_format', '-of', 'json', str(path)])
     try:
         return json.loads(result.stdout)
     except ValueError as exc:
@@ -35,7 +36,7 @@ def probe_media(path):
 
 
 def _ffmpeg():
-    return ['ffmpeg', '-hide_banner', '-nostdin', '-y', '-loglevel', 'info',
+    return [media_binary('ffmpeg'), '-hide_banner', '-nostdin', '-y', '-loglevel', 'info',
             '-threads', '2', '-filter_threads', '1', '-filter_complex_threads', '1']
 
 

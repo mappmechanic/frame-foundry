@@ -1,5 +1,6 @@
 """Advisory LLM goal assessment from the rendered candidate, never hard QA."""
 from __future__ import annotations
+from .media_tools import media_binary
 
 import json
 from pathlib import Path
@@ -45,7 +46,7 @@ def _rendered_frames(result: AssemblyResult, directory):
     # The fps filter samples the decoded output in one pass. Seeking each instant
     # can miss the final frame on low-fps footage because seek chooses a later frame.
     pattern = Path(directory) / 'rendered-%02d.jpg'
-    subprocess.run(['ffmpeg', '-nostdin', '-hide_banner', '-loglevel', 'error', '-y',
+    subprocess.run([media_binary('ffmpeg'), '-nostdin', '-hide_banner', '-loglevel', 'error', '-y',
                     '-i', str(result.candidate_path), '-frames:v', str(count),
                     '-vf', f'fps={count * 1000 / result.duration_ms:.9f},scale=640:640:force_original_aspect_ratio=decrease',
                     '-q:v', '5', str(pattern)], check=True, capture_output=True, timeout=30)

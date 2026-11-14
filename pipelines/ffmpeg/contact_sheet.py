@@ -1,4 +1,5 @@
 """Cut-boundary evidence from decoded output frames, not plan thumbnails."""
+from .media_tools import media_binary
 from pathlib import Path
 from PIL import Image,ImageDraw
 from .proxy import probe,run
@@ -18,7 +19,7 @@ def build_contact_sheet(video,cut_times_ms,output):
     tiles=[];rows=[]
     for index,(cut,side,ms) in enumerate(samples):
         path=output.parent/f'qa-frame-{index}.jpg'
-        run(['ffmpeg','-y','-v','error','-ss',str(ms/1000),'-i',str(video),'-frames:v','1','-vf',f'scale={tw}:{th}','-threads','1',str(path)])
+        run([media_binary('ffmpeg'),'-y','-v','error','-ss',str(ms/1000),'-i',str(video),'-frames:v','1','-vf',f'scale={tw}:{th}','-threads','1',str(path)])
         with Image.open(path) as image:
             tile=Image.new('RGB',(tw,th+label_h),'black');tile.paste(image,(0,0))
             draw=ImageDraw.Draw(tile);draw.text((4,th+3),f'cut {cut} {side}',fill='white')

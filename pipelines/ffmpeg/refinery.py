@@ -1,4 +1,5 @@
 """Source discovery, proxy evidence and explicitly local WhisperX transcription."""
+from .media_tools import media_binary
 from pathlib import Path
 from fractions import Fraction
 import contextlib, os, socket, tempfile
@@ -78,7 +79,7 @@ def run_refinery(ctx,footage_dir,*,transcriber=None):
             if w['source_id']!=sid or not 0<=w['start_ms']<w['end_ms']<=source['duration_ms']:raise StageError('WORD_RANGE_INVALID','refinery','Invalid transcript word range',sid)
         words.extend(ws)
         # Scene boundaries are detected on the proxy and mapped to source time.
-        proc=run(['ffmpeg','-hide_banner','-i',str(proxy),'-vf',"select='gt(scene,0.30)',showinfo",'-an','-f','null','-'])
+        proc=run([media_binary('ffmpeg'),'-hide_banner','-i',str(proxy),'-vf',"select='gt(scene,0.30)',showinfo",'-an','-f','null','-'])
         import re
         cuts=[0]+[round(float(t)*1000) for t in re.findall(r'pts_time:([0-9.]+)',proc.stderr)]+[source['duration_ms']]
         cuts=sorted(set(t for t in cuts if 0<=t<=source['duration_ms']))

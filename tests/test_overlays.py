@@ -152,3 +152,26 @@ def test_missing_compositing_filter_is_typed_before_render(monkeypatch):
     with pytest.raises(StageError) as exc:overlays.preflight()
     assert exc.value.code=='OVERLAY_FILTERS' and exc.value.stage=='assembler'
     assert 'overlay' in str(exc.value)
+
+@pytest.mark.parametrize('flags',['TS','TS.','T|'])
+def test_ffmpeg_eight_nine_two_flag_filter_listing(monkeypatch,flags):
+    from types import SimpleNamespace
+    from pipelines.ffmpeg import render
+    listing=f'Filters:\n {flags} fade V->V\n {flags} overlay VV->V\n'
+    monkeypatch.setattr(render,'_run',lambda args:SimpleNamespace(stdout=listing,stderr=''))
+    assert overlays.preflight()=='png'
+
+
+def test_media_binary_overrides_and_path_fallback(monkeypatch):
+    from pipelines.ffmpeg.media_tools import media_binary
+    from pipelines.ffmpeg import render,proxy
+    from types import SimpleNamespace
+    monkeypatch.setenv('FRAMEFOUNDRY_FFMPEG','/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg')
+    monkeypatch.setenv('FRAMEFOUNDRY_FFPROBE','/opt/homebrew/opt/ffmpeg-full/bin/ffprobe')
+    assert render._ffmpeg()[0]==media_binary('ffmpeg')=='/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg'
+    calls=[]
+    monkeypatch.setattr(render,'_run',lambda args:(calls.append(args) or SimpleNamespace(stdout='{}')))
+    render.probe_media('clip.mp4')
+    assert calls[0][0]=='/opt/homebrew/opt/ffmpeg-full/bin/ffprobe'
+    monkeypatch.delenv('FRAMEFOUNDRY_FFMPEG');monkeypatch.delenv('FRAMEFOUNDRY_FFPROBE')
+    assert media_binary('ffmpeg')=='ffmpeg' and media_binary('ffprobe')=='ffprobe'

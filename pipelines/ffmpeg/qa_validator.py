@@ -1,5 +1,6 @@
 """Independent hard media gates. Advisory AI cannot make a failed gate pass."""
 from __future__ import annotations
+from .media_tools import media_binary
 # Support the repository guardrail's direct-script entrypoint as well as -m.
 if __package__ in (None,''):
     import sys
@@ -22,7 +23,7 @@ _TIMELINE_TOLERANCE_MS = 1.0
 def verify_constant_fps(path, video):
     """Verify decoded presentation timestamps, not rounded/aggregate rate tags."""
     try:
-        data=json.loads(run(['ffprobe','-v','error','-select_streams','v:0',
+        data=json.loads(run([media_binary('ffprobe'),'-v','error','-select_streams','v:0',
             '-show_frames','-show_entries','frame=best_effort_timestamp,pkt_duration',
             '-of','json',str(path)]).stdout)
         tick=Fraction(video['time_base'])
@@ -49,7 +50,7 @@ def verify_constant_fps(path, video):
 
 
 def measure_audio(path):
-    result=run(['ffmpeg','-hide_banner','-i',str(path),'-af','loudnorm=I=-14:TP=-1:LRA=11:print_format=json','-f','null','-'])
+    result=run([media_binary('ffmpeg'),'-hide_banner','-i',str(path),'-af','loudnorm=I=-14:TP=-1:LRA=11:print_format=json','-f','null','-'])
     match=re.search(r'{\s*"input_i".*?}',result.stderr,re.S)
     if not match:return dict(integrated_lufs=None,true_peak_dbtp=None)
     metrics=json.loads(match.group());values=[]

@@ -6,6 +6,7 @@ no transcription model is constructed and no asset is downloaded. ``words`` must
 already be aligned to this proxy's timeline (and filtered to this source).
 """
 from __future__ import annotations
+from .media_tools import media_binary
 
 from array import array
 import math
@@ -69,7 +70,7 @@ def analyze_audio(proxy_path: Path, *, words: list | None = None) -> dict:
         pcm_path = Path(directory) / 'audio.pcm'
         try:
             subprocess.run(
-                ['ffmpeg', '-nostdin', '-y', '-v', 'error', '-protocol_whitelist', 'file,pipe',
+                [media_binary('ffmpeg'), '-nostdin', '-y', '-v', 'error', '-protocol_whitelist', 'file,pipe',
                  '-i', str(path), '-map', '0:a:0', '-vn', '-ac', '1', '-ar', str(SAMPLE_RATE),
                  '-f', 's16le', str(pcm_path)],
                 check=True, capture_output=True, timeout=DECODE_TIMEOUT_SECONDS,

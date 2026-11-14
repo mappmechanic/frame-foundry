@@ -6,6 +6,7 @@ from finished.mp4, timeline.otio and the original sources. Missing evidence is
 reported as ``not_run`` (which fails G), never as a fabricated pass.
 """
 from __future__ import annotations
+from .media_tools import media_binary
 
 from fractions import Fraction
 from pathlib import Path
@@ -82,7 +83,7 @@ def optional_json(path):
 
 
 def ffprobe(path):
-    data = json.loads(_run(['ffprobe', '-v', 'error', '-show_streams', '-show_format',
+    data = json.loads(_run([media_binary('ffprobe'), '-v', 'error', '-show_streams', '-show_format',
                             '-of', 'json', str(path)]).stdout)
     video = next((s for s in data.get('streams', []) if s.get('codec_type') == 'video'), None)
     audio = next((s for s in data.get('streams', []) if s.get('codec_type') == 'audio'), None)
@@ -98,7 +99,7 @@ def ffprobe(path):
 
 def measure_ebur128(path):
     """Integrated loudness and true peak from ffmpeg ebur128=peak=true."""
-    err = _run(['ffmpeg', '-hide_banner', '-nostats', '-nostdin', '-v', 'info', '-i', str(path),
+    err = _run([media_binary('ffmpeg'), '-hide_banner', '-nostats', '-nostdin', '-v', 'info', '-i', str(path),
                 '-map', '0:a:0', '-af', 'ebur128=peak=true:framelog=verbose', '-f', 'null', '-']).stderr
     summary = err[err.rfind('Summary:'):]
 
@@ -116,7 +117,7 @@ def measure_ebur128(path):
 
 
 def frame_timing(path):
-    out = _run(['ffprobe', '-v', 'error', '-select_streams', 'v:0', '-show_entries',
+    out = _run([media_binary('ffprobe'), '-v', 'error', '-select_streams', 'v:0', '-show_entries',
                 'packet=pts_time', '-of', 'csv=p=0', str(path)]).stdout
     pts = sorted(float(x.split(',')[0]) for x in out.split() if x.strip() and x.strip() != 'N/A')
     deltas = [round((b - a) * 1000, 4) for a, b in zip(pts, pts[1:])]
@@ -238,7 +239,7 @@ def analyze_frames(video_path, shots, render_w, render_h, source_dims, fps=30):
         box = content_box(render_w, render_h, *(dims or (None, None, 0)),framing_mode=shot.get('framing_mode','fit_pad'))
         x0, y0 = int(round(box[0] * sx)), int(round(box[1] * sy))
         boxes.append((x0, y0, max(x0 + 2, int(round(box[2] * sx))), max(y0 + 2, int(round(box[3] * sy)))))
-    proc = subprocess.Popen(['ffmpeg', '-v', 'error', '-nostdin', '-i', str(video_path), '-map', '0:v:0',
+    proc = subprocess.Popen([media_binary('ffmpeg'), '-v', 'error', '-nostdin', '-i', str(video_path), '-map', '0:v:0',
                              '-vf', f'scale={aw}:{ah}:flags=area,format=gray', '-f', 'rawvideo', '-'],
                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     size = aw * ah
@@ -337,7 +338,7 @@ def ffmpeg_content_defects(video_path,duration_ms):
     analysis catches black source content hidden by mattes. freezedetect uses a
     conservative -80 dB noise floor; cropped jitter analysis remains stricter.
     """
-    err=_run(['ffmpeg','-hide_banner','-nostats','-nostdin','-v','info','-i',str(video_path),'-an','-vf',
+    err=_run([media_binary('ffmpeg'),'-hide_banner','-nostats','-nostdin','-v','info','-i',str(video_path),'-an','-vf',
         'scale=270:-2,blackdetect=d=0.5:pix_th=0.15:pic_th=0.98,freezedetect=n=-80dB:d=1','-f','null','-']).stderr
     black=[dict(start_ms=round(float(a)*1000),end_ms=round(float(b)*1000),seconds=float(d))
         for a,b,d in re.findall(r'black_start:([0-9.]+) black_end:([0-9.]+) black_duration:([0-9.]+)',err) if float(d)>0.5]
@@ -642,7 +643,7 @@ def generate_distinct_footage(out_dir, *, seconds=4):
     sources = []
     for index, source in enumerate(_DISTINCT_SOURCES, 1):
         path = out_dir / f'{index:02d}-trip.mp4'
-        _run(['ffmpeg', '-y', '-v', 'error', '-f', 'lavfi', '-i', source, '-f', 'lavfi', '-i',
+        _run([media_binary('ffmpeg'), '-y', '-v', 'error', '-f', 'lavfi', '-i', source, '-f', 'lavfi', '-i',
               f'sine=frequency={330 + 110 * index}:sample_rate=48000', '-t', str(seconds), '-c:v', 'libx264',
               '-preset', 'ultrafast', '-threads', '2', '-pix_fmt', 'yuv420p', '-c:a', 'aac', str(path)])
         sources.append(dict(source_id=f'source-{index:04d}', filename=path.name, duration_ms=seconds * 1000))
@@ -654,7 +655,7 @@ def generate_distinct_footage(out_dir, *, seconds=4):
 
 
 def _reencode_video(src, dst, vf=None, filter_complex=None, af=None):
-    args = ['ffmpeg', '-y', '-v', 'error', '-nostdin', '-i', str(src)]
+    args = [media_binary('ffmpeg'), '-y', '-v', 'error', '-nostdin', '-i', str(src)]
     if filter_complex:
         args += ['-filter_complex', filter_complex, '-map', '[v]', '-map', '0:a:0']
     else:
@@ -757,7 +758,7 @@ def _voiceover_check(root,spec,render,checks):
         saved=timeline.metadata.get('voiceover')
         if not path.is_relative_to(root.resolve()) or _hash(path)!=vo['sha256'] or dict(saved or {})!=vo:
             raise ValueError('Saved VO audio/timeline identity differs')
-        info=json.loads(_run(['ffprobe','-v','error','-show_streams','-show_format','-of','json',str(path)]).stdout)
+        info=json.loads(_run([media_binary('ffprobe'),'-v','error','-show_streams','-show_format','-of','json',str(path)]).stdout)
         if not any(s.get('codec_type')=='audio' for s in info['streams']):raise ValueError('No narration audio')
         seconds=float(info['format']['duration'])
         if not math.isfinite(seconds):raise ValueError('Nonfinite narration duration')
