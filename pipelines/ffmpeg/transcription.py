@@ -184,7 +184,7 @@ class TranscriptionRouter:
                 self.sources[source['source_id']]=dict(provider='local',model='whisperx',cached=False,word_count=len(words))
                 return words
             except StageError as exc:
-                unavailable=exc.code=='DEPENDENCY_MISSING' or isinstance(exc.__cause__,(ImportError,ModuleNotFoundError))
+                unavailable=exc.code=='DEPENDENCY_MISSING' or isinstance(exc.__cause__,(ImportError,ModuleNotFoundError,FileNotFoundError))
                 if not unavailable or self.mode=='local':raise
         if self.remote is None:
             try:self.remote=OpenAITranscriber.from_env()

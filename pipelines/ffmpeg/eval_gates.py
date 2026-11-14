@@ -127,7 +127,7 @@ def frame_timing(path):
 def read_shots(episode_dir):
     """Ordered V1 shots from the saved OTIO, in source and output milliseconds."""
     import opentimelineio as otio
-    from .render import timeline_ranges
+    from .render import timeline_ranges, output_frames
     timeline = otio.adapters.read_from_file(str(Path(episode_dir) / 'timeline.otio'))
     timeline_ranges(timeline, episode_dir=episode_dir)  # reuse render's strict V1/A1 contract
     video = next(t for t in timeline.tracks if t.kind == 'Video')
@@ -142,8 +142,12 @@ def read_shots(episode_dir):
             source_start_ms=round(start), source_end_ms=round(start + duration),
             source_duration_ms=round(available.duration.to_seconds() * 1000),
             timeline_start_ms=round(cursor), timeline_end_ms=round(cursor + duration),
-            selection_ids=list(clip.metadata.get('selection_ids') or [])))
-        cursor += duration
+            selection_ids=list(clip.metadata.get('selection_ids') or []),
+            framing_mode=timeline.metadata.get('framing_mode','fit_pad')))
+        # Output positions follow the renderer's exact cumulative 30fps grid.
+        encoded_duration=output_frames(duration/1000)*1000/30
+        shots[-1]['timeline_end_ms']=round(cursor+encoded_duration)
+        cursor += encoded_duration
     return shots, timeline.metadata.get('aspect_ratio')
 
 
@@ -176,8 +180,11 @@ def word_cut_violations(shots, words):
     return violations, clamps
 
 
-def content_box(render_w, render_h, source_w, source_h, rotation=0):
-    """Render-space rectangle holding real picture (render.py fit+pad letterboxing)."""
+def content_box(render_w, render_h, source_w, source_h, rotation=0,framing_mode='fit_pad'):
+    """Real picture geometry, retaining legacy fit/pad when no marker exists."""
+    if framing_mode=='center_crop':
+        mx,my=int(render_w*THRESHOLDS['letterbox_margin_fraction']),int(render_h*THRESHOLDS['letterbox_margin_fraction'])
+        return (mx,my,render_w-mx,render_h-my)
     if source_w is None or source_h is None:
         return (0, 0, render_w, render_h)
     if round(abs(rotation)) % 180 == 90:
@@ -228,7 +235,7 @@ def analyze_frames(video_path, shots, render_w, render_h, source_dims, fps=30):
     boxes = []
     for shot in shots:
         dims = source_dims.get(shot['source_path'])
-        box = content_box(render_w, render_h, *(dims or (None, None, 0)))
+        box = content_box(render_w, render_h, *(dims or (None, None, 0)),framing_mode=shot.get('framing_mode','fit_pad'))
         x0, y0 = int(round(box[0] * sx)), int(round(box[1] * sy))
         boxes.append((x0, y0, max(x0 + 2, int(round(box[2] * sx))), max(y0 + 2, int(round(box[3] * sy)))))
     proc = subprocess.Popen(['ffmpeg', '-v', 'error', '-nostdin', '-i', str(video_path), '-map', '0:v:0',

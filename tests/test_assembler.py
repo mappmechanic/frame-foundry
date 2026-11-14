@@ -157,7 +157,7 @@ def test_metadata_avoids_constructor_mapping_cast_and_roundtrips(tmp_path, monke
     otio.adapters.write_to_file(timeline, str(path))
     saved = otio.adapters.read_from_file(str(path))
     assert spec == original and calls and all('metadata' not in kw for _, kw in calls)
-    assert dict(saved.metadata) == dict(schema_version='1.0', aspect_ratio='9:16', target_duration_ms=5000)
+    assert dict(saved.metadata) == dict(schema_version='1.0', aspect_ratio='9:16', target_duration_ms=5000, framing_mode='center_crop')
     assert type(saved.metadata['target_duration_ms']) is int
     assert saved.metadata['aspect_ratio'] == amended['aspect_ratio']
     for video, audio in zip(saved.tracks[0], saved.tracks[1]):

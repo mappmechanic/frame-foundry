@@ -150,6 +150,9 @@ def render_timeline(timeline, candidate_path, *, episode_dir):
     if aspect not in ('9:16', '16:9'):
         raise StageError('TIMELINE_INVALID', 'render', 'Missing/invalid aspect ratio')
     width, height = (1080, 1920) if aspect == '9:16' else (1920, 1080)
+    framing_mode=timeline.metadata.get('framing_mode','fit_pad')
+    if framing_mode not in ('center_crop','fit_pad'):
+        raise StageError('TIMELINE_INVALID','render','Unsupported saved framing mode')
     ranges = timeline_ranges(timeline, episode_dir=episode_dir)
     candidate = Path(candidate_path)
     candidate.parent.mkdir(parents=True, exist_ok=True)
@@ -172,7 +175,7 @@ def render_timeline(timeline, candidate_path, *, episode_dir):
         framing = (
             f'scale={width}:{height}:force_original_aspect_ratio=increase:force_divisible_by=2,'
             f'crop={width}:{height}:(iw-ow)/2:(ih-oh)/2'
-            if aspect == '9:16' else
+            if aspect == '9:16' and framing_mode=='center_crop' else
             f'scale={width}:{height}:force_original_aspect_ratio=decrease:force_divisible_by=2,'
             f'pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black')
         video = (f'[0:v:0]trim=start={start:.9f}:end={end:.9f},'

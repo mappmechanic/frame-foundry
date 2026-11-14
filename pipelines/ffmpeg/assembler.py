@@ -142,7 +142,8 @@ def build_timeline(spec: dict, analysis: dict) -> tuple[otio.schema.Timeline, di
             groups.append(dict(source_id=sid, start_ms=a, end_ms=b, selections=[segment]))
     timeline = _with_metadata(otio.schema.Timeline(name=amended['episode_id']), {
         'schema_version': '1.0', 'aspect_ratio': amended['aspect_ratio'],
-        'target_duration_ms': amended['target_duration_ms']})
+        'target_duration_ms': amended['target_duration_ms'],
+        'framing_mode': 'center_crop' if amended['aspect_ratio']=='9:16' else 'fit_pad'})
     video = otio.schema.Track(name='V1', kind=otio.schema.TrackKind.Video)
     audio = otio.schema.Track(name='A1', kind=otio.schema.TrackKind.Audio)
     timeline.tracks.extend([video, audio])

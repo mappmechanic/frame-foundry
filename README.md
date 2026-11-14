@@ -71,7 +71,7 @@ set -a
 source .env
 set +a
 export FRAMEFOUNDRY_LLM_PROVIDER=openai
-# With provisioned local ASR assets:
+# Real ASR: local WhisperX if provisioned, otherwise configured OpenAI:
 make demo-arizona ARGS='--episode arizona-demo --asr-provider auto'
 # Or an explicitly labeled visual-only diagnostic:
 make demo-arizona ARGS='--episode arizona-visual --visual-only'

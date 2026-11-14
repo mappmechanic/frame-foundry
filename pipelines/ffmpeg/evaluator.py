@@ -25,8 +25,8 @@ from .contracts import atomic_write_json
 from . import eval_gates, eval_judge
 from .eval_gates import optional_json, read_strict_json
 
-EVALUATOR_VERSION = 'evaluator-1.0'
-SCORING_VERSION = 'scores-1.0'
+EVALUATOR_VERSION = 'evaluator-1.1-asr-crop'
+SCORING_VERSION = 'scores-1.1-crop'
 REPO = Path(__file__).resolve().parents[2]
 DEFAULT_EVALS_ROOT = REPO / 'evals'
 SCHEMA_PATH = REPO / 'contracts' / 'eval-report.schema.json'
