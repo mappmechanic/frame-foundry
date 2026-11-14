@@ -239,3 +239,11 @@ def test_scoreboard_route_uses_actual_jsonl(rig,monkeypatch):
     (m.evals/'scoreboard.jsonl').write_text('{bad\n')
     response=c.get('/scoreboard');assert response.status_code==200
     assert 'invalid/corrupt lines: 1' in response.text and 'Scoreboard input: unavailable' not in response.text
+
+
+def test_invalid_narrative_does_not_crash_preview(rig):
+    c,m,folder,spawned=rig;d=m.root/'bad-spec';d.mkdir()
+    atomic_write_json(d/'narrative-spec.json',dict(target_duration_ms='not a duration',voiceover='not metadata'))
+    response=c.get('/api/episodes/bad-spec');assert response.status_code==200
+    assert 'Narrative artifact invalid or unavailable' in response.json()['limitations']
+    assert not response.json()['video_url']

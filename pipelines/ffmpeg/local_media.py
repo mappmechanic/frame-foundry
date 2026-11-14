@@ -2,7 +2,7 @@
 from pathlib import Path
 from functools import lru_cache
 import json,math
-from .contracts import resolve_episode, StageError, validate_report
+from .contracts import resolve_episode, StageError, validate_report, validate_narrative
 from .evaluator import validate_eval_report, model_cost, sha256_file
 
 ARTIFACTS={'finished.mp4','contact-sheet.jpg','narrative-spec.json','qa-report.json','eval-report.json','timeline.otio'}
@@ -40,6 +40,13 @@ def detail(root,eid,job=None,active=False):
     state=load(root,eid,'state.json') or {}
     qa=load(root,eid,'qa-report.json')
     spec=load(root,eid,'narrative-spec.json') or {}
+    spec_invalid=False
+    if spec:
+        try:
+            validate_narrative(spec)
+            if spec['episode_id']!=eid:raise ValueError()
+        except Exception:
+            spec={};spec_invalid=True;limitations.append('Narrative artifact invalid or unavailable')
     evaluation=load(root,eid,'eval-report.json')
     try:
         if qa is not None:validate_report(qa)
@@ -60,6 +67,8 @@ def detail(root,eid,job=None,active=False):
             evaluation=None;status='stale';limitations.append('Evaluated finished clip missing')
     except Exception:
         evaluation=None;status='unavailable';limitations.append('Evaluation invalid or unreadable')
+    if spec_invalid and evaluation is not None:
+        evaluation=None;status='stale';limitations.append('Evaluation cannot certify an invalid current narrative artifact')
     stage=state.get('stage') or job.get('stage','interrupted')
     if not active and job.get('stage') in ('failed','interrupted') and stage not in ('completed','failed','interrupted'):
         stage=job['stage']
