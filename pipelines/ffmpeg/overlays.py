@@ -149,7 +149,9 @@ def compile_cards(spec,analysis,timeline,root):
     from .render import output_frames
     if not spec.get('overlays'):return spec
     plan=copy.deepcopy(spec['overlays']);plan.update(cards=[],limitations=[],render_sha256=None,plan_sha256=None,font_sha256=None,style_sha256=None)
+    old_omissions={n for n in spec['overlays'].get('limitations',[]) if n.startswith('Requested section ') and ' omitted:' in n}
     spec=copy.deepcopy(spec);spec['overlays']=plan
+    spec['coverage']['limitations']=[n for n in spec['coverage']['limitations'] if n not in old_omissions]
     clips=list(timeline.tracks[0]);w,h=(1080,1920) if spec['aspect_ratio']=='9:16' else (1920,1080)
     starts=[];cursor=0
     for c in clips:starts.append((cursor,output_frames(c.source_range.duration.to_seconds())));cursor+=starts[-1][1]
@@ -184,11 +186,14 @@ def compile_cards(spec,analysis,timeline,root):
     if not add('title',plan['title'],0,dict(kind='operator_goal',source_id='',start_ms=0,end_ms=0,cue='')):
         raise StageError('OVERLAY_DURATION','assembler','Title lacks a 2.5s readable interval within 3.5s')
     for section,name in enumerate(plan['sections']):
-        found=False
+        found=False;grounded=False
         for i,clip in enumerate(clips):
             proof=matches(spec,analysis,clip,section,root)
+            grounded |= bool(proof)
             if proof and add('section',f'{section+1}. {name}',i,proof,section):found=True;break
-        if not found:plan['limitations'].append(f'Requested section {section+1} omitted: no grounded cut-safe readable interval')
+        if not found:
+            reason='grounded footage found, but no free 2.5s full-strength hold after fades/cut masks' if grounded else 'no retained transcript or verified in-window frame matched'
+            plan['limitations'].append(f'Requested section {section+1} omitted: no grounded cut-safe readable interval ({reason})')
     for note in plan['limitations']:
         if 'omitted:' in note and note not in spec['coverage']['limitations']:
             spec['coverage']['status']='partial';spec['coverage']['limitations'].append(note)

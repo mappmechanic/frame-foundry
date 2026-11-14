@@ -232,6 +232,27 @@ def test_first_grounded_short_intervals_show_both_section_cards(tmp_path,monkeyp
     compiled['overlays']['render_sha256']=overlays.filehash(receipt)
     checks=overlays.verify(compiled,receipt,[4000,212/30*1000,304/30*1000],394/30*1000)
     assert all(c['status']=='pass' for c in checks)
+    # Real rendered pixels for BOTH short section cards; generated media is test-only.
+    from PIL import Image
+    source=tmp_path/'blue.mp4';output=tmp_path/'two-sections.mp4'
+    subprocess.run(['ffmpeg','-v','error','-y','-f','lavfi','-i',
+        'color=c=blue:s=1080x1920:r=30:d=13.14','-f','lavfi','-i','sine=frequency=500:duration=13.14','-frames:v','394',
+        '-c:v','libx264','-preset','ultrafast','-pix_fmt','yuv420p','-c:a','aac','-shortest',str(source)],check=True,capture_output=True)
+    overlays.burn(source,output,compiled['overlays'])
+    for t in (5.0,8.2):
+        frame=tmp_path/'section.png'
+        subprocess.run(['ffmpeg','-v','error','-y','-ss',str(t),'-i',str(output),
+            '-frames:v','1',str(frame)],check=True,capture_output=True)
+        with Image.open(frame) as image:
+            assert sum(r>220 and g>220 and b>220 for r,g,b in image.convert('RGB').crop((0,230,1080,700)).getdata())>300
+    for cut in (120,212,304):
+        for n in (cut-1,cut,cut+1):
+            frame=tmp_path/'cut.png'
+            subprocess.run(['ffmpeg','-v','error','-y','-ss',str(n/30),'-i',str(output),
+                '-frames:v','1',str(frame)],check=True,capture_output=True)
+            with Image.open(frame) as image:
+                assert sum(b<130 for r,g,b in image.convert('RGB').crop((0,230,1080,700)).getdata())==0
+    assert all(c['status']=='pass' for c in overlays.verify(compiled,output,[4000,212/30*1000,304/30*1000],394/30*1000))
 
 
 def test_later_reserved_card_does_not_hide_earlier_grounded_slot(tmp_path,monkeypatch):
@@ -252,3 +273,14 @@ def test_only_stationary_cut_masks_reduce_readable_hold():
     assert overlays.readable_frames(0,91,[0,1,89,90])==75
     assert overlays.readable_frames(0,91,[44,45,46])==72
     assert list(overlays.free_intervals(0,240,[(150,241),(0,30)]))==[(31,150)]
+
+
+def test_recompiled_overlay_removes_only_its_stale_coverage_omission(tmp_path,monkeypatch):
+    _,spec,analysis,timeline=setup_plan(tmp_path,monkeypatch)
+    old='Requested section 2 omitted: no grounded cut-safe readable interval'
+    spec['overlays']['limitations'].append(old)
+    spec['coverage']['limitations'] += [old,'Independent source coverage remains partial']
+    amended=overlays.compile_cards(spec,analysis,timeline,tmp_path)
+    assert old not in amended['coverage']['limitations']
+    assert 'Independent source coverage remains partial' in amended['coverage']['limitations']
+    assert amended['coverage']['status']=='partial'
