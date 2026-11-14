@@ -91,7 +91,9 @@ def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixt
                     if report['integrated_lufs'] is None:repairable=False
                     if not repairable or index==3:break
                 except StageError as error:
-                    attempts.append(dict(index=index,stage='assembler',passed=False,reasons=[error.code],changes=[]))
+                    if attempts and attempts[-1]['index']==index:
+                        attempts[-1].update(stage=error.stage,passed=False,reasons=[error.code])
+                    else:attempts.append(dict(index=index,stage='assembler',passed=False,reasons=[error.code],changes=[]))
                     if not error.repairable or index==3:
                         report=failure_report(ctx,error);report['attempts']=copy.deepcopy(attempts);break
             validate_report(report);atomic_write_json(directory/'qa-report.json',report);save_state(ctx,'failed');return report

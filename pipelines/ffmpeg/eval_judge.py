@@ -195,10 +195,17 @@ def run_judge(*, episode_dir, evals_root, provider, goal, shots, duration_ms, as
     key = cache_key(footage_hash=footage_hash, goal=goal, render_hash=render_hash, provider=pname, model=model)
     cache_path = Path(evals_root) / '.inference-cache' / 'judge' / f'{key}.json'
     cached = _load_cache(cache_path, key, shot_ids) if cache_path.is_file() else None
+    guard = Path(episode_dir) / GUARD_NAME
+    if guard.exists():
+        try: previous_render=json.loads(guard.read_text()).get('render_hash')
+        except Exception: previous_render=None
+        if previous_render != render_hash:
+            return unavailable('Episode used its judge on a different render; changed final J and Q unavailable',provider=pname,model=model)
     if cached:
         entry, result, j = cached
-        return _scored(result, j, cache_hit=True, provider=pname, model=model,
-                       reason='Validated cache hit; historical cost not re-charged')
+        scored=_scored(result,j,cache_hit=True,provider=pname,model=model,reason='Validated cache hit; historical cost not re-charged')
+        scored['historical_usage']=entry.get('historical_usage')
+        return scored
     guard = Path(episode_dir) / GUARD_NAME
     if guard.exists():
         try:

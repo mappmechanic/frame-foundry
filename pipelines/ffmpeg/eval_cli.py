@@ -24,9 +24,15 @@ class _Parser(argparse.ArgumentParser):
         raise EvalToolError(message)
 
 
+def _episode(root,episode_id):
+    from .contracts import resolve_episode,StageError
+    try:return resolve_episode(root,episode_id)
+    except StageError as exc:raise EvalToolError(str(exc)) from None
+
+
 def _common(p):
     p.add_argument('--episodes-root', type=Path, default=REPO / 'episodes')
-    p.add_argument('--evals-root', type=Path, default=REPO / 'evals')
+    p.add_argument('--evals-root', type=Path, default=Path(os.environ.get('FRAMEFOUNDRY_EVALS_ROOT',REPO/'evals')))
 
 
 def _parser():
@@ -99,7 +105,7 @@ def _eval(a, out):
             except ProviderError as exc:
                 _print(dict(status='unavailable', reason=f'provider configuration invalid: {exc}'))
                 return EXIT_UNAVAILABLE
-        result = tools.pairwise_compare(a.episodes_root / a.pairwise[0], a.episodes_root / a.pairwise[1],
+        result = tools.pairwise_compare(_episode(a.episodes_root,a.pairwise[0]), _episode(a.episodes_root,a.pairwise[1]),
                                         provider=provider, evals_root=a.evals_root, persist=not a.no_persist)
         if provider is None and a.judge:
             result['reason'] = 'no API key configured for the selected provider; pairwise performs zero calls'
@@ -109,7 +115,7 @@ def _eval(a, out):
         return {'compared': EXIT_OK, 'failed': EXIT_FAIL}.get(result['status'], EXIT_UNAVAILABLE)
     if not a.episode_id:
         raise EvalToolError('eval needs an episode id, or one of --calibration/--golden/--pairwise')
-    directory = a.episodes_root / a.episode_id
+    directory = _episode(a.episodes_root,a.episode_id)
     if not directory.is_dir():
         raise EvalToolError(f'Episode directory not found: {directory}')
     if a.labels and not a.labels.is_file():
@@ -121,7 +127,7 @@ def _eval(a, out):
 
 
 def _rate(a, input_fn, interactive):
-    directory = a.episodes_root / a.episode_id
+    directory = _episode(a.episodes_root,a.episode_id)
     if not directory.is_dir():
         raise EvalToolError(f'Episode directory not found: {directory}')
     score, publish = a.score, a.publish_without_edits
@@ -146,6 +152,8 @@ def _scoreboard(a):
             print(json.dumps(r, sort_keys=True, allow_nan=False))
         return EXIT_OK
     summary = tools.summarize(reports, unreadable_lines=bad)
+    ratings,_=tools.load_ratings(a.evals_root)
+    summary['judge_vs_human']=tools.calibrate(reports,ratings)
     code = EXIT_OK
     if a.baseline:
         base, base_bad = tools.read_jsonl(a.baseline) if a.baseline.is_file() else ([], 0)

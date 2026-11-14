@@ -50,7 +50,8 @@ def test_clean_render_passes_and_letterbox_is_not_black(base):
     assert -15 <= loud['integrated_lufs'] <= -13 and loud['method'].startswith('ffmpeg ebur128')
     assert _status(result, 'true_peak')['measurement']['true_peak_dbtp'] <= -1
     assert _status(result, 'contact_sheet')['status'] == 'pass'
-    assert any('not full schema coverage' in x for x in result['limitations'])
+    assert not any('not full schema coverage' in x for x in result['limitations'])
+    assert 'analysis.json' in _status(result,'artifact_schemas')['measurement']['validated']
     assert any('fixture' in x for x in result['limitations'])
 
 

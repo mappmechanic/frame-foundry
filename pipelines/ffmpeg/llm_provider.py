@@ -44,7 +44,7 @@ MAX_TOKEN_BUDGET = 1_000_000
 CONTEXT_TOKENS = 128_000              # hard per-request ceiling, NOT the reservation
 PROTOCOL_OVERHEAD_TOKENS = 1024       # message framing, roles, JSON-mode wrapper
 IMAGE_TOKEN_CEILING = 4000            # conservative per-image cap / unknown-model value
-ROLE_CALL_CAPS = {'planner': 2, 'judge': 1}
+ROLE_CALL_CAPS = {'planner': 2, 'judge': 1, 'pairwise':2}
 BUDGET_ENV = 'FRAMEFOUNDRY_EPISODE_API_BUDGET_USD'
 TOKEN_BUDGET_ENV = 'FRAMEFOUNDRY_EPISODE_TOKEN_BUDGET'
 TIMEOUT_SECONDS = 45
@@ -431,14 +431,14 @@ class LLMProvider:
             content = [{'type': 'image', 'source': {'type': 'base64',
                         'media_type': 'image/jpeg', 'data': image}} for image in encoded]
             content.append({'type': 'text', 'text': prompt})
-            payload = {'model': self.model, 'max_tokens': max_output_tokens,
+            payload = {'model': self.model, 'max_tokens': max_output_tokens, 'temperature':0,
                        'system': system + instruction,
                        'messages': [{'role': 'user', 'content': content}]}
         else:
             content = [{'type': 'image_url', 'image_url': {
                 'url': 'data:image/jpeg;base64,' + image, 'detail': 'high'}} for image in encoded]
             content.append({'type': 'text', 'text': prompt})
-            payload = {'model': self.model, 'max_tokens': max_output_tokens,
+            payload = {'model': self.model, 'max_tokens': max_output_tokens, 'temperature':0,
                        'response_format': {'type': 'json_object'},
                        'messages': [{'role': 'system', 'content': system + instruction},
                                     {'role': 'user', 'content': content}]}

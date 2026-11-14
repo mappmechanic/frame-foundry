@@ -32,4 +32,4 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ''
           OPENAI_API_KEY: ''
-        run: python -m pytest -q tests/test_eval_tools.py tests/test_evaluator.py tests/test_eval_gates.py tests/test_eval_judge.py
+        run: python -m pytest tests -q

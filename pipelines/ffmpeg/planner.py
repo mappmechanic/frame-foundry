@@ -96,7 +96,7 @@ def _compact_evidence(ctx, analysis, directory):
                     tile=Image.new('RGB',(160,192),'black');tile.paste(image,((160-image.width)//2,0))
                     ImageDraw.Draw(tile).text((2,161),str(c['candidate_id'])[-8:],fill='white')
                     ImageDraw.Draw(tile).text((2,177),f"{c['source_id']} {c['start_ms']}ms",fill='white')
-                row['tile_index']=len(tiles);row['frame_time_ms']=c.get('frame_time_ms');tiles.append(tile)
+                row['tile_index']=len(tiles);row['frame_time_ms']=c.get('frame_time_ms');row['frame_in_window']=c.get('frame_in_window',False);tiles.append(tile)
             except (OSError,ValueError):pass
         rows.append(row)
     images=[]

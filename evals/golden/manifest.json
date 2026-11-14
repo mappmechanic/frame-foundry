@@ -17,17 +17,51 @@
       "id": "synthetic-vertical-30s",
       "kind": "synthetic",
       "goal": "Create a 30 second vertical teaser from this family-trip footage",
-      "synthetic": {"clip_seconds": 12, "note": "3 distinct sources x 12 s = 36 s, enough to cover the 30 s target"},
-      "labels": {"labels": [{"filename": "01-trip.mp4", "start_ms": 1000, "end_ms": 3000}]},
-      "expected": {"gates_passed": true, "qa_result_in": ["passed", "partial"]}
+      "synthetic": {
+        "clip_seconds": 12,
+        "note": "3 distinct sources x 12 s = 36 s, enough to cover the 30 s target"
+      },
+      "labels": {
+        "labels": [
+          {
+            "filename": "01-trip.mp4",
+            "start_ms": 1000,
+            "end_ms": 3000
+          }
+        ]
+      },
+      "expected": {
+        "gates_passed": true,
+        "qa_result_in": [
+          "passed",
+          "partial"
+        ]
+      }
     },
     {
       "id": "synthetic-horizontal-60s",
       "kind": "synthetic",
       "goal": "Create a 60 second horizontal teaser from this family-trip footage",
-      "synthetic": {"clip_seconds": 24, "note": "3 distinct sources x 24 s = 72 s, enough to cover the 60 s target"},
-      "labels": {"labels": [{"filename": "02-trip.mp4", "start_ms": 2000, "end_ms": 6000}]},
-      "expected": {"gates_passed": true, "qa_result_in": ["passed", "partial"]}
+      "synthetic": {
+        "clip_seconds": 24,
+        "note": "3 distinct sources x 24 s = 72 s, enough to cover the 60 s target"
+      },
+      "labels": {
+        "labels": [
+          {
+            "filename": "02-trip.mp4",
+            "start_ms": 2000,
+            "end_ms": 6000
+          }
+        ]
+      },
+      "expected": {
+        "gates_passed": true,
+        "qa_result_in": [
+          "passed",
+          "partial"
+        ]
+      }
     },
     {
       "id": "arizona-vertical-30s",
@@ -35,7 +69,13 @@
       "asset": "arizona-480p",
       "goal": "Create a 30 second vertical teaser from this raw family-trip footage that highlights the important moments of the trip",
       "labels": null,
-      "expected": {"gates_passed": true, "qa_result_in": ["passed", "partial"]}
+      "expected": {
+        "gates_passed": true,
+        "qa_result_in": [
+          "passed",
+          "partial"
+        ]
+      }
     },
     {
       "id": "arizona-horizontal-60s",
@@ -43,15 +83,41 @@
       "asset": "arizona-480p",
       "goal": "Create a 60 second horizontal teaser from this raw family-trip footage that highlights the important moments of the trip",
       "labels": null,
-      "expected": {"gates_passed": true, "qa_result_in": ["passed", "partial"]}
+      "expected": {
+        "gates_passed": true,
+        "qa_result_in": [
+          "passed",
+          "partial"
+        ]
+      }
     },
     {
-      "id": "arizona-kids-landscape",
+      "id": "arizona-kids-only",
       "kind": "external",
       "asset": "arizona-480p",
-      "goal": "Create a landscape teaser that focuses on the kids during the trip",
+      "goal": "Create a 30 second vertical teaser showing only the kids during the trip",
       "labels": null,
-      "expected": {"gates_passed": true, "qa_result_in": ["passed", "partial"]}
+      "expected": {
+        "gates_passed": true,
+        "qa_result_in": [
+          "passed",
+          "partial"
+        ]
+      }
+    },
+    {
+      "id": "arizona-landscapes-only",
+      "kind": "external",
+      "asset": "arizona-480p",
+      "goal": "Create a 30 second vertical teaser showing only landscapes from this Arizona trip",
+      "labels": null,
+      "expected": {
+        "gates_passed": true,
+        "qa_result_in": [
+          "passed",
+          "partial"
+        ]
+      }
     },
     {
       "id": "arizona-impossible-beach-sunset-desert",
@@ -59,7 +125,13 @@
       "asset": "arizona-480p",
       "goal": "Create a teaser of a beach sunset in the desert",
       "labels": null,
-      "expected": {"gates_passed": true, "qa_result_in": ["partial"], "unsupported_goal": true}
+      "expected": {
+        "gates_passed": true,
+        "qa_result_in": [
+          "partial"
+        ],
+        "unsupported_goal": true
+      }
     }
   ]
 }

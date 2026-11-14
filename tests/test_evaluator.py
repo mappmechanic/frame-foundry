@@ -15,7 +15,7 @@ from pipelines.ffmpeg.llm_provider import LLMResult
 
 GOAL = 'Create a 10 second family-trip teaser'
 TOP = {'schema_version', 'evaluation_id', 'episode_id', 'goal', 'created_at', 'render_hash', 'footage_hash', 'gates',
-       'scores', 'judge', 'model_cost', 'tokens', 'timing', 'provenance', 'first_try_passed', 'limitations'}
+       'scores', 'judge', 'model_cost', 'tokens', 'timing', 'provenance', 'first_try_passed', 'limitations','budget'}
 
 
 @pytest.fixture(scope='module')
@@ -107,7 +107,7 @@ def test_prerender_failure_yields_valid_zero_report(world, tmp_path):
     assert s['G'] == 0 and s['Q'] == 0 and s['D'] is None and s['J'] is None and s['H'] is None
     assert report['render_hash'] is None and report['judge']['status'] == 'unavailable'
     assert report['goal'] == GOAL and report['first_try_passed'] is False
-    assert _lines(tmp_path / 'evals' / 'scoreboard.jsonl')[0]['evaluation_id'] == report['evaluation_id']
+    assert _lines(tmp_path / 'evals' / 'scoreboard.jsonl')[-1]['evaluation_id'] == report['evaluation_id']
 
 
 def test_visual_only_episode_is_g0_without_fabricated_word_pass(world, tmp_path):
@@ -117,7 +117,8 @@ def test_visual_only_episode_is_g0_without_fabricated_word_pass(world, tmp_path)
     word = next(c for c in evaluation['gates']['checks'] if c['name'] == 'word_cut_integrity')
     assert word['status'] == 'not_run' and evaluation['scores']['G'] == 0 and evaluation['scores']['Q'] == 0
     assert evaluation['provenance']['transcription_status'] == 'visual_only_unavailable'
-    assert not (tmp_path / 'evals').exists() and report['episode_id'] == 'visual'
+    assert len(_lines(tmp_path / 'evals' / 'scoreboard.jsonl'))==1 and report['episode_id']=='visual'
+    assert (tmp_path/'eps'/'visual'/'eval-report.json').exists()
 
 
 def test_labels_drive_h_and_weights(episode, tmp_path):
@@ -151,8 +152,8 @@ def test_cost_accounting_known_estimated_unknown(tmp_path):
     ledger([call(), call(status='failed', cost_usd=None, input_tokens=None, output_tokens=None), call(status='blocked',
             cost_usd=None, reserved_usd=0, input_tokens=None, output_tokens=None)])
     cost, tokens = model_cost(tmp_path, 0.5)
-    assert cost['usd'] == pytest.approx(0.42) and cost['status'] == 'estimated'
-    assert cost['quality_per_dollar'] == pytest.approx(0.5 / 0.42, rel=1e-4)
+    assert cost['usd'] is None and cost['status']=='unknown' and cost['known_usd']==pytest.approx(0.02)
+    assert cost['quality_per_dollar'] is None
     assert tokens == dict(input=10, output=5, complete=False)
     (tmp_path / 'tts-usage.json').write_text(json.dumps(dict(calls=[dict(status='success', cost_usd=0.08, cost_status='measured')])))
     assert model_cost(tmp_path, 0.5)[0]['tts_usd'] == pytest.approx(0.08)

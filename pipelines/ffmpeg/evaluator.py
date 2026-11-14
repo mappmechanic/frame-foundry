@@ -214,10 +214,13 @@ def _ledger_cost(calls, kind):
         if status == 'success' and cost is not None:
             total += Decimal(str(cost))
             estimated |= call.get('cost_status', 'estimated') != 'measured'
-        elif status == 'failed' and (cost is not None or reserved):
-            total += max(Decimal(str(reserved)), Decimal(str(cost or 0)))
-            estimated = True
-            notes.append(f'{kind} failed call {str(call.get("call_id"))[:36]} charged at conservative reservation')
+        elif status == 'failed' and cost is not None:
+            total += Decimal(str(cost))
+            estimated |= call.get('cost_status','estimated') != 'measured'
+            notes.append(f'{kind} failed call usage is included; its budget reservation is not treated as billed spend')
+        elif status == 'failed':
+            unknown = True
+            notes.append(f'{kind} failed call {str(call.get("call_id"))[:36]} has unknown spend; reservation {reserved} is budget accounting only')
         else:
             unknown = True
     return total, unknown, estimated, notes
@@ -359,6 +362,19 @@ def persist_report(report, episode_dir, evals_root=None):
     return append_scoreboard(report, evals_root)
 
 
+def budget_summary(root):
+    from .llm_provider import episode_budget_usd,episode_token_budget,_load_ledger,_charged,_charged_tokens
+    try:
+        ledger=_load_ledger(Path(root)/'llm-usage.json')
+        calls=ledger['calls']
+        return dict(status=ledger.get('budget_status','ok'),api_limit_usd=float(episode_budget_usd()),token_limit=episode_token_budget(),
+            accounted_llm_usd=float(sum((_charged(c) for c in calls),Decimal(0))),accounted_tokens=sum(_charged_tokens(c) for c in calls),
+            unknown_usage_reservations=sum(c['status']!='blocked' and (c.get('input_tokens') is None or c.get('output_tokens') is None or c.get('cost_usd') is None) for c in calls),
+            blocked_calls=sum(c['status']=='blocked' for c in calls),reason=None)
+    except Exception:
+        return dict(status='unavailable',api_limit_usd=None,token_limit=None,accounted_llm_usd=None,accounted_tokens=None,unknown_usage_reservations=None,blocked_calls=None,reason='Invalid budget configuration or usage ledger')
+
+
 # ------------------------------------------------------------------- main API
 def _resolve_provider(provider, limitations):
     if provider != 'env':
@@ -440,6 +456,9 @@ def evaluate_episode(episode_dir, *, provider=None, evals_root=None, labels=None
         first_try = False if qa.get('passed') is False else None
     else:
         first_try = None
+    previous=optional_json(root/'eval-report.json')
+    if previous and isinstance(previous.get('first_try_passed'),bool):first_try=previous['first_try_passed']
+    elif analysis.get('transcription_status')=='visual_only_unavailable':first_try=False
     elapsed = qa.get('elapsed_seconds')
     footage_ms = [s.get('duration_ms') for s in sources if isinstance(s.get('duration_ms'), int)]
     report = dict(
@@ -453,7 +472,7 @@ def evaluate_episode(episode_dir, *, provider=None, evals_root=None, labels=None
         timing=dict(elapsed_seconds=float(elapsed) if isinstance(elapsed, (int, float)) and elapsed >= 0 else None,
                     footage_seconds=sum(footage_ms) / 1000 if footage_ms else None,
                     evaluation_seconds=round(time.monotonic() - started, 3)),
-        provenance=provenance(qa, analysis), first_try_passed=first_try,
+        provenance=provenance(qa, analysis), first_try_passed=first_try,budget=budget_summary(root),
         limitations=list(dict.fromkeys(limitations)))
     validate_eval_report(report)
     if persist:

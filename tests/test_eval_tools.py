@@ -56,8 +56,8 @@ def test_kappa_values_and_null_reasons():
     assert tools.cohen_kappa([(True, True), (False, False), (True, True), (False, False)]) == (1.0, None)
     k, why = tools.cohen_kappa([(True, True), (True, True)])
     assert k is None and 'degenerate' in why
-    k, why = tools.cohen_kappa([(True, False), (False, False), (True, False)])  # human constant
-    assert k is None and 'degenerate' in why
+    k, why = tools.cohen_kappa([(True, False), (False, False), (True, False)])  # one constant rater: kappa remains defined
+    assert k == 0 and why is None
     assert tools.cohen_kappa([(True, True)])[0] is None
     assert tools.cohen_kappa([])[1].startswith('need at least 2')
     k, _ = tools.cohen_kappa([(True, True), (True, False), (False, False), (False, True)])
@@ -160,11 +160,11 @@ def test_baseline_comparison_rules(tmp_path, capsys):
     for cur, base_, needle in [
             ([rep('a', Q=0.8)], [], 'no readable'),
             ([], base, 'current scoreboard'),
-            ([rep('z', Q=0.8)], base, 'no episode present'),
-            ([rep('a', Q=0.8, method='scores-2.0')], base, 'config mismatch'),
-            ([rep('a', Q=0.8, fh='other')], base, 'footage/goal differ'),
-            ([rep('a', Q=0.8, goal='other')], base, 'footage/goal differ'),
-            ([rep('a', Q=None)], base, 'unscored'),
+            ([rep('z', Q=0.8)], base, 'case coverage differs'),
+            ([rep('a', Q=0.8, method='scores-2.0')], base[:1], 'config mismatch'),
+            ([rep('a', Q=0.8, fh='other')], base[:1], 'footage/goal differ'),
+            ([rep('a', Q=0.8, goal='other')], base[:1], 'footage/goal differ'),
+            ([rep('a', Q=None)], base[:1], 'unscored'),
             ([rep('a', Q=0.8)], [rep('a', Q=0.0)], 'zero')]:
         res = tools.compare_baseline(cur, base_)
         assert res['status'] == 'unavailable' and needle in res['reason'], (needle, res)

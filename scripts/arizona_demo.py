@@ -38,6 +38,8 @@ def main(argv=None):
     parser.add_argument('--episode')
     parser.add_argument('--episodes-root', type=Path)
     parser.add_argument('--visual-only', action='store_true')
+    parser.add_argument('--evals-root',type=Path)
+    parser.add_argument('--no-planner-retry',action='store_true')
     parser.add_argument('--fetch-only', action='store_true')
     args = parser.parse_args(argv)
     footage = fetch(args.data_dir)
@@ -48,6 +50,8 @@ def main(argv=None):
     if args.episode: command += ['--episode', args.episode]
     if args.episodes_root: command += ['--episodes-root', str(args.episodes_root)]
     if args.visual_only: command += ['--visual-only']
+    if args.evals_root: command += ['--evals-root',str(args.evals_root)]
+    if args.no_planner_retry: command += ['--no-planner-retry']
     return subprocess.run(command, check=False).returncode
 
 

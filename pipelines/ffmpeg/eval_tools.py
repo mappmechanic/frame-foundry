@@ -195,8 +195,8 @@ def cohen_kappa(pairs):
     b = sum(1 for _, y in pairs if y)
     po = sum(1 for x, y in pairs if x == y) / n
     pe = (a / n) * (b / n) + (1 - a / n) * (1 - b / n)
-    if a in (0, n) or b in (0, n) or math.isclose(pe, 1.0):
-        return None, 'degenerate sample: one or both raters are constant, kappa is uninformative'
+    if math.isclose(pe,1.0):
+        return None, 'degenerate sample: expected agreement is one, kappa denominator is zero'
     return round((po - pe) / (1 - pe), 6) + 0.0, None
 
 
@@ -362,6 +362,8 @@ def compare_baseline(current, baseline, *, tolerance=REGRESSION_TOLERANCE):
         return unavailable('baseline has no readable evaluation reports')
     if not cur:
         return unavailable('current scoreboard has no readable evaluation reports')
+    if set(cur)!=set(base):
+        return unavailable('Golden-set case coverage differs; subset comparisons cannot certify no regression')
     common = sorted(set(cur) & set(base))
     if not common:
         return unavailable('no episode present in both baseline and current')
@@ -628,6 +630,11 @@ def pairwise_compare(dir_a, dir_b, *, provider, evals_root=None, pair_id=None, p
     pair_id = pair_id or uuid.uuid4().hex[:12]
     ledger = _evals_root(evals_root) / 'pairwise' / pair_id
     ledger.mkdir(parents=True, exist_ok=True)
+    from .budget import reserve_project_episode
+    try:
+        reserve_project_episode(Path(os.environ.get('FRAMEFOUNDRY_PROJECT_BUDGET_DIR',str(REPO))),str(ledger))
+    except Exception as exc:
+        return dict(status='failed',reason='Pairwise project budget blocked: '+str(exc)[:160])
     try:
         sheets = {'A': _episode_sheet(a, ledger / 'sheet-a.jpg')['path'],
                   'B': _episode_sheet(b, ledger / 'sheet-b.jpg')['path']}

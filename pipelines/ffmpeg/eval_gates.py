@@ -32,10 +32,10 @@ CHECK_NAMES = ['artifacts_present', 'artifact_schemas', 'timeline_sources', 'rea
                'duration_target', 'word_cut_integrity', 'black_frames', 'frozen_frames',
                'repeated_shots', 'contact_sheet']
 # Known JSON artifacts and their contracts; anything else is declared, not inferred.
-KNOWN_SCHEMAS = {'narrative-spec.json': 'narrative-spec.schema.json',
-                 'qa-report.json': 'qa-report.schema.json'}
-UNSCHEMATIZED = ['analysis.json', 'transcript.json', 'llm-usage.json', 'proxy-map.json',
-                 'contact-sheet-index.json', 'state.json', 'tts-usage.json']
+KNOWN_SCHEMAS = {'narrative-spec.json':'narrative-spec.schema.json','qa-report.json':'qa-report.schema.json','eval-report.json':'eval-report.schema.json',
+    'analysis.json':'internal:analysis','transcript.json':'internal:transcript','state.json':'internal:state','proxy-map.json':'internal:proxy_map',
+    'contact-sheet-index.json':'internal:contact_sheet_index','llm-usage.json':'internal:llm_usage','tts-usage.json':'internal:tts_usage','eval-judge-guard.json':'internal:eval_judge_guard'}
+UNSCHEMATIZED = []
 _TIMEOUT = 900
 
 
@@ -334,7 +334,12 @@ def repeated_shot_pairs(shot_stats):
 
 
 def _schema_errors(payload, schema_name):
-    schema = read_strict_json(REPO / 'schemas' / schema_name)
+    if schema_name.startswith('internal:'):
+        schema=read_strict_json(REPO/'schemas'/'episode-artifacts.schema.json')
+        schema['$ref']='#/$defs/'+schema_name.split(':',1)[1]
+    else:
+        folder='contracts' if schema_name=='eval-report.schema.json' else 'schemas'
+        schema=read_strict_json(REPO/folder/schema_name)
     return [e.message[:200] for e in list(Draft202012Validator(schema).iter_errors(payload))[:3]]
 
 
@@ -362,16 +367,20 @@ def run_gates(episode_dir):
                 invalid[name] = errors
             else:
                 validated.append(name)
-    for name in UNSCHEMATIZED:
-        if (root / name).is_file():
-            declared.append(name)
-            try:
-                read_strict_json(root / name)
-            except (OSError, ValueError):
-                unparsable.append(name)
-    if declared:
-        limitations.append('No schema contract exists for internal artifacts ' + ', '.join(declared)
-                           + '; only strict finite JSON parsing was verified (not full schema coverage)')
+    # Every emitted top-level JSON must have a declared contract. Nested saved
+    # narrative plans share the same contract as the final narrative.
+    for path in root.rglob('*.json'):
+        if path.parent==root and path.name in KNOWN_SCHEMAS:continue
+        name=str(path.relative_to(root))
+        schema=KNOWN_SCHEMAS.get(path.name)
+        if schema is None:
+            invalid[name]=['No registered schema for emitted Episode JSON']
+            continue
+        try:
+            errors=_schema_errors(read_strict_json(path),schema)
+        except Exception:errors=['Unparsable or schema-invalid JSON']
+        if errors:invalid[name]=errors
+        else:validated.append(name)
     bad = bool(invalid or unparsable or spec is None)
     reason = None
     if bad:
