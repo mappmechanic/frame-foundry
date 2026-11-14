@@ -9,8 +9,10 @@ description: Shape an evidence-backed opening and pacing while preserving long p
 
 Use after [rough cut](../rough-cut/SKILL.md), before assembly. Existing
 `pipelines/ffmpeg/teaser_edit.py` has source-bound short-edit selection; it does
-not imply all rules below are implemented. These are **declared target** rules
-for the parent/WO-18 versioned opt-in production policy, disabled by default.
+not imply all rules below are implemented. The [production runtime](../../../docs/PRODUCTION_POLICY.md) applies supported
+hook/pacing rules only with `--production`, disabled by default. Face-safe 112%
+punch-ins remain a **declared target**; saved `editing_policy` receipts identify
+actual changes and limitations.
 [Availability](../../../docs/skills/README.md) / [provenance](../../../docs/skills/provenance.json).
 
 ## Editorial pass
@@ -38,8 +40,8 @@ for the parent/WO-18 versioned opt-in production policy, disabled by default.
 
 Provide the selected hook's source/time proof, actual shot durations, exceptions,
 retained word ranges and crop measurements. Re-rendering a saved plan with only
-supported deterministic policy changes should need no new Planner call; that is
-a target until the runtime supports it. Route overlays to
+supported deterministic policy changes makes no new Planner call through
+`scripts/reoverlay.py --production`; optional `--judge` requests fresh evaluation. Route overlays to
 [SOP-03](../../../docs/sops/SOP-03-remotion-sparse-overlays.md) and output checks to
 [visual QA](../visual-qa-validator/SKILL.md). Docs alone do not prove improved edits.
 

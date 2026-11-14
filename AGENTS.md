@@ -35,13 +35,13 @@ for overlay architecture. SOP-01/SOP-02 files are absent from this checkout; KB
 lists PDFs but their contents are not assumed here. Do not invent local paths.
 Current schemas, 80ms pre-roll / 120ms post-roll, [-15,-13] LUFS / <=-1 dBTP,
 .06H cap height (~116px portrait), >=2.5s steady holds and cut-1/cut/cut+1 masks
-remain authoritative. Stricter zones, landmark checks, cut+3 exclusion and the
-14/120/1 spring are declared targets, not installed capabilities.
+remain authoritative. Ordinary legacy output retains those settings. Opt-in production availability
+is described in section 5: spring, zones and sampled subject checks are installed;
+continuous landmarks and stricter cut+3 masking remain declared targets.
 
 Parent/WO-18 owns the versioned opt-in production policy/runtime and any actual
-schema fields; ordinary edits stay unchanged by default. This docs-only branch
-modifies no Python runtime, schemas, pyproject or site. Documentation checks do
-not certify video output or demonstrate a production-quality improvement. The
+schema fields; ordinary edits stay unchanged by default. WO-17 guidance does not itself modify runtime or enable policy. Documentation
+checks do not certify video output or demonstrate a production-quality improvement. The
 media QA guardrail above remains required whenever a rendered edit is delivered.
 
 See [availability/provenance](docs/skills/README.md) and the
@@ -55,9 +55,9 @@ unlicensed and AGPL sources were not cloned/read/copied. No npm/npx installers.
 The earlier WO-17 table records the documentation-only milestone. The current
 `--production` implementation is mapped in [PRODUCTION_POLICY.md](docs/PRODUCTION_POLICY.md):
 `production.py` applies source-preserving hook/pacing/silence rules; `audio_policy.py`
-mixes authorized optional beds; `overlays.py` applies the14/120/1 analytic spring
+mixes authorized optional beds; `overlays.py` applies the 14/120/1 analytic spring
 and stricter zones; QA adds bound policy/subject checks and cut+3 exclusion sheets.
 `policy_ab.py` records matched saved-plan evaluation; publication requires actual
 exported complete evidence. Ordinary edits remain legacy by default. Remotion/V3,
-continuous eye/chin tracking and112% face-safe punch-ins are NOT implemented.
+continuous eye/chin tracking and 112% face-safe punch-ins are NOT implemented.
 No new Planner/ASR/TTS call is needed for deterministic saved-plan replay.

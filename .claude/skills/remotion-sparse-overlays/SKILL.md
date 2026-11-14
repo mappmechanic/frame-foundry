@@ -12,7 +12,9 @@ measurement, masks and evidence. Do not load entire upstream prompts.
 
 **Implemented:** `pipelines/ffmpeg/overlays.py` rasterizes with Pillow PNG and
 composites through FFmpeg **sparse active-window** enables, 250ms fades and an
-8px slide. It does not require drawtext/libass. It still processes the base video;
+8px slide in legacy mode. The [production runtime](../../../docs/PRODUCTION_POLICY.md) uses `--production` for analytic
+14/120/1 spring entry and stricter zones with sampled Haar collision checks.
+It does not require drawtext/libass. It still processes the base video;
 this is not a browser renderer packed into short alpha runs.
 
 **Declared target:** Remotion/React sparse **V3** graphics, rendered only for active
@@ -31,8 +33,10 @@ Remotion integration needs separate implementation and package-license review.
   after entrance/exit and masked frames. Existing QA's .05H lower bound does not
   authorize shrinking the .06H design. No continuous breathing during the hold.
 - Preserve **cut-1/cut/cut+1** masks. The proposed **cut+3 exclusion** and its
-  exact frame contact-sheet audit are stricter targets, not installed checks.
-- Target safety: **9:16 bottom 22% / right 15% / top 10%**; **16:9 outer 10%**.
+  exact cut-1 through cut+3 masking remain targets, not installed checks.
+  Production adds a cut+3 contact-sheet sample with red exclusion zones; this
+  sample is evidence for inspection, not proof of cut+3 alpha absence.
+- Implemented opt-in safety: **9:16 bottom 22% / right 15% / top 10%**; **16:9 outer 10%**.
   Intersect with current upper-third/top-12% authority; shorten/omit unsafe cards
   rather than relax a gate. Measure the entire animated envelope and eye/chin
   collision safety, not a single guessed anchor.
@@ -54,6 +58,7 @@ Concept adaptations (no upstream text/code copied):
   references at `1dcbe5e3fc6cf970bd10d3cc05f0a8a5d19d0383`; MIT,
   **Copyright (c) 2025 haidrrrry**, [full local notice](../../../docs/skills/licenses/haidrrrry-claude-remotion-skill-MIT.txt).
 
-The 14/120/1 spring is FrameFoundry's requested target, not upstream theme defaults.
+The 14/120/1 spring is FrameFoundry's original implemented opt-in policy, not
+upstream theme defaults or evidence that Remotion is installed.
 Full paths and exceptions: [manifest](../../../docs/skills/provenance.json).
 No assets/fonts/media included. Original additions: [repository MIT](../../../LICENSE).

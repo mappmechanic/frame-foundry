@@ -1,9 +1,23 @@
 # SOP-03 — Sparse overlays: Measure -> Draw -> Verify
 
-**Owner/scope:** WO-17 documentation and architecture only. Baseline `ea0887e`.
-Parent/WO-18 owns versioned opt-in production policy/runtime; ordinary edits stay
-unchanged by default. This SOP declares a target, not an installed renderer or a
-claim that production output improved. No policy field or CLI flag is introduced.
+**Owner/scope:** WO-17 worker guidance and sparse-adapter architecture; ordinary edits stay
+unchanged by default. [Production runtime](../PRODUCTION_POLICY.md)
+owns the actual opt-in `--production` behavior and strict `editing_policy` receipt.
+Installing this guidance alone does not enable it or demonstrate a quality gain.
+
+## Current integration versus historical baseline
+
+Implemented opt-in behavior includes source-preserving editorial transforms,
+authorized local audio, original analytic 14/120/1 spring, portrait/landscape
+exclusions, sampled Haar collision checks and cut+3 red-zone contact-sheet samples.
+Saved-plan replay makes no new Planner/ASR/TTS calls; comparisons require fresh,
+matched evaluation evidence and both optional Judge budget reservations.
+
+The matrix and ordinary-render descriptions below preserve baseline `ea0887e`.
+They are not claims that later WO-18 behavior is absent. Remotion/React V3 alpha
+rendering, continuous eye/chin landmarks, 112% punch-ins and stricter cut-1 through
+cut+3 masking remain declared targets. A cut+3 sample does not enforce that mask.
+Use the runtime document for current supported flags, fields and limitations.
 
 ## 0. Availability and authority
 

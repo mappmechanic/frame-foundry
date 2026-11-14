@@ -37,7 +37,8 @@ def test_skill_frontmatter_routing_and_local_attribution(name):
     assert 'MIT' in text
     assert '../../../LICENSE' in text
     assert 'provenance.json' in text
-    assert 'declared target' in text.lower()
+    assert 'PRODUCTION_POLICY.md' in text
+    assert '--production' in text
     assert len(text.splitlines()) <= 85  # Curated guidance, not bulk upstream prompts.
     for source in manifest()['sources']:
         if name in source['adapted_in']:
@@ -170,3 +171,19 @@ def test_supported_check_commands_not_vendor_or_remotion_installers():
     qa = (ROOT / 'pipelines/ffmpeg/qa_validator.py').read_text()
     assert "parser.add_argument('--episode-dir'" in qa
     assert "'qa-report.json'" in qa and "'finished.mp4'" in qa
+
+
+def test_integrated_guidance_matches_runtime_and_keeps_adapter_limits():
+    docs = [(SKILLS / name / 'SKILL.md').read_text() for name in NAMES]
+    matrix = (ROOT / 'docs/skills/README.md').read_text()
+    assert 'Current integrated availability' in matrix
+    assert 'cut-1 through cut+3 alpha masking' in matrix
+    assert 'sample is evidence for inspection, not proof' in docs[3]
+    assert 'not independent license verification' in docs[2]
+    assert 'qualified semantic retakes remain a **declared target**' in docs[0]
+    assert 'optional `--judge` requests fresh evaluation' in docs[1]
+    assert 'sampled-face gates plus cut+3' in docs[4]
+    assert 'Current integration versus historical baseline' in SOP.read_text()
+    runtime = (ROOT / 'docs/PRODUCTION_POLICY.md').read_text()
+    assert 'export FRAMEFOUNDRY_PROJECT_API_BUDGET_USD=300' not in runtime
+    assert '--budget-limit-usd 300' in runtime
