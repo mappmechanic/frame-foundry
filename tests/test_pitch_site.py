@@ -62,7 +62,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs');
  page.on('request',r=>requests.push({url:r.url(),method:r.method()}));
  const evidence=process.env.PITCH_EVIDENCE_DIR||'/tmp/framefoundry-pitch-evidence';fs.mkdirSync(evidence,{recursive:true});
  // Every value below is synthetic offline test data, not a real run or score.
- const run=(id,time,Q,usd,status='measured')=>({id,created_at:time,qa_passed:true,video_url:`/runs/${id}/finished.mp4`,scores:{Q,J:.8},cost:{usd,status}});
+ const run=(id,time,Q,usd,status='measured')=>({id,created_at:time,qa_passed:true,video_url:`/runs/${id}/finished.mp4`,scores:{Q,J:id.endsWith('old')?.7:.8},cost:{usd,status}});
  let mode='valid',media='valid';
  const runs=[run('test-only-old','2026-01-01T00:00:00Z',.5,2),run('test-only-new','2026-01-02T00:00:00Z',.8,1)];
  let index={schema_version:'1.0',mode:'recorded-demo',generated_at:'2026-01-03T00:00:00Z',lead_run_id:'test-only-old',runs};
@@ -82,7 +82,20 @@ const assert=require('node:assert/strict'),fs=require('node:fs');
  assert.equal(await text('cost'),'$2.5000');assert.equal(await text('qa'),'66.7%');
  assert.match(await text('trend'),/test-only-old: Q 0.500 \/ \$2.0000 = 0.25 Q\/\$/);
  assert.match(await text('trend'),/test-only-new: Q 0.800 \/ \$1.0000 = 0.80 Q\/\$/);
- assert.match(await text('demo-label'),/test-only-new/);assert.equal(await text('judge'),'0.800');
+ assert.match(await text('demo-label'),/test-only-old/);assert.equal(await text('judge'),'0.700');
+ assert.match(await text('lead-metrics'),/test-only-old: Q 0.500 · J 0.700 · model cost \$2.0000/);
+ assert.equal(await page.locator('#demo-video').getAttribute('src'),'/runs/test-only-old/finished.mp4');
+ // The explicit lead beats timestamp sorting and carries its own Q/J/cost.
+ index.lead_run_id='test-only-new';await open();assert.match(await text('demo-label'),/test-only-new/);assert.equal(await text('judge'),'0.800');
+ const leadExample={...runs[0],scores:{Q:.809,J:.79},cost:{usd:.012,status:'measured'}};
+ index.runs=[leadExample,runs[1]];index.lead_run_id=leadExample.id;await open();
+ assert.equal(await text('judge'),'0.790');assert.match(await text('lead-metrics'),/Q 0.809 · J 0.790 · model cost \$0.0120/);
+ assert.equal(await text('cost'),'$2.5000'); // Cohort accounting must not be replaced by lead cost.
+ for(const badLead of [null,'missing','../private','test-only-new']){
+  index.lead_run_id=badLead;index.runs=badLead==='test-only-new'?[leadExample,{...runs[1],qa_passed:false}]:[leadExample,runs[1]];
+  await open();assert.equal(await text('judge'),'N/A');assert.equal(await page.locator('#demo-video').getAttribute('src'),null);
+ }
+ index.runs=runs;index.lead_run_id='test-only-new';await open();
  await page.locator('#next').focus();await page.keyboard.press('ArrowRight');assert.equal(await text('position'),'Slide 2 / 8');
  await page.locator('#previous').click();await page.locator('#next').click();assert.equal(await text('position'),'Slide 2 / 8');
  assert(await page.locator('#title-2').evaluate(e=>e.parentElement===document.activeElement));
@@ -120,7 +133,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs');
  index.runs=[];board={schema_version:'1.0',cohort:{episode_count:0,shipped:0,qa_known:0,qa_passed:0,cost_complete:false}};await open();assert.equal(await text('judge'),'N/A');assert.equal(await text('qa'),'N/A');assert.equal(await text('factory-time'),'N/A');assert.equal(await page.locator('#demo-video').getAttribute('src'),null);
  // A foreign URL and an unverified run must never get media requests.
  index.runs=[{...runs[0],video_url:'https://example.org/private.mp4'},{...runs[1],qa_passed:false}];await open();assert.equal(await page.locator('#demo-video').getAttribute('src'),null);
- index.runs=[runs[1]];media='missing';await open();await page.waitForFunction(()=>document.getElementById('video-state').textContent.includes('corrupt'));await go(6);await page.screenshot({path:`${evidence}/test-only-media-error.png`,fullPage:true});
+ index.runs=[runs[1]];index.lead_run_id=runs[1].id;media='missing';await open();await page.waitForFunction(()=>document.getElementById('video-state').textContent.includes('corrupt'));await go(6);await page.screenshot({path:`${evidence}/test-only-media-error.png`,fullPage:true});
  for(mode of ['malformed','fetch-failed']){await open();assert.match(await text('metrics-state'),/unavailable or invalid/);assert.equal(await text('cost'),'N/A');await go(5);await page.screenshot({path:`${evidence}/test-only-${mode}.png`,fullPage:true});}
  mode='loading';await page.goto(origin+'/pitch',{waitUntil:'domcontentloaded'});assert.match(await text('metrics-state'),/Loading/);assert.equal(await text('cost'),'N/A');await go(5);await page.screenshot({path:`${evidence}/test-only-loading.png`,fullPage:true});
  assert.equal(errors.length,0,JSON.stringify(errors));assert(requests.every(r=>r.url.startsWith(origin+'/')&&r.method==='GET'),JSON.stringify(requests));

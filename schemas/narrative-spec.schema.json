@@ -449,7 +449,10 @@
       "additionalProperties": false,
       "properties": {
         "version": {
-          "const": "goal-overlays-1"
+          "enum": [
+            "goal-overlays-1",
+            "goal-overlays-2"
+          ]
         },
         "title": {
           "type": "string"
@@ -600,6 +603,27 @@
                   "end_ms",
                   "cue"
                 ]
+              },
+              "cap_height": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "pill_opacity": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "padding": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "cut_frames": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "uniqueItems": true
               }
             },
             "required": [
