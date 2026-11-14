@@ -189,3 +189,30 @@ lessons in the single Planner call. The full paired test proves off/on cache and
 lesson separation, fresh provenance, controlled cost and observed deltas. No
 provider credentials, paid execution, real Arizona learning curve, Hydra readiness,
 UI merge or deployment was performed. See the core PR for exact shard totals.
+
+### Completed offline verification
+
+Full suite: **893 passed, 1 skipped** in six isolated command shards, each bounded
+with `timeout 540` in Linux (do not assume GNU `timeout` exists on macOS). The
+longest shard was 306.72 seconds. The core shard is 67 passed in 64.09 seconds.
+Additional targeted shared-hook verification was 43 passed; do not double-count
+that targeted run in the full-suite total. Compileall and `git diff --check` pass.
+PR #7's existing read-only `read_curve` / `public_projection` accepted the generated
+mocked paired curve with four source Episodes and comparable deltas; UI not merged.
+
+Reproduce the same file partition from the repository (one command per shard):
+
+```sh
+.venv/bin/python -m pytest -q tests/test_arizona_demo.py tests/test_arizona_recovery.py tests/test_assembler.py tests/test_audio_analysis.py tests/test_budget_limits.py tests/test_campaigns.py tests/test_candidates.py tests/test_closing_constraint.py
+.venv/bin/python -m pytest -q tests/test_crop_eval_geometry.py tests/test_decisions.py tests/test_decisions_ab.py tests/test_demo_scoreboard.py tests/test_disk_safety.py tests/test_duration_coverage.py tests/test_eval_gates.py tests/test_eval_judge.py
+.venv/bin/python -m pytest -q tests/test_eval_tools.py tests/test_evaluator.py tests/test_export_site.py tests/test_factory_history.py tests/test_free_repair.py tests/test_goal_judge.py tests/test_goal_parser.py tests/test_grounded_voiceover.py
+.venv/bin/python -m pytest -q tests/test_llm_provider.py tests/test_local_server.py tests/test_local_ui_page.py tests/test_low_score_retry.py tests/test_openai_transcription.py tests/test_overlays.py tests/test_pipeline.py tests/test_pitch_site.py
+.venv/bin/python -m pytest -q tests/test_planner.py tests/test_public_site.py tests/test_python_setup.py tests/test_qa_render_regressions.py tests/test_render.py tests/test_run_evals.py tests/test_scoreboard_html.py tests/test_short_speech_edit.py tests/test_teaser_pacing_crop.py tests/test_vision.py tests/test_visual_duration.py tests/test_voiceover.py
+.venv/bin/python -m pytest -q tests/test_memory_loop.py tests/test_memory_store.py tests/test_improve.py tests/test_memory_episode.py
+```
+
+Shard results respectively: 108 passed/1 skipped (44.04s), 99 passed (108.87s),
+201 passed (77.57s), 202 passed (306.72s), 216 passed (124.07s), and 67 passed
+(64.09s). Synthetic/mocked results do not certify real footage quality or sponsor
+performance. Verification logs are private workspace `/tmp/wo15-shard{1..5}.log`
+and `/tmp/wo15-core-green.log`; no generated media or private curves are committed.
