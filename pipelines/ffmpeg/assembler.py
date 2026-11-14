@@ -69,10 +69,12 @@ def build_timeline(spec: dict, analysis: dict) -> tuple[otio.schema.Timeline, di
         words = words_by_source[sid]
         selected = [w for w in words if w['start_ms'] <= b and a <= w['end_ms']]
         if selected:
-            # Keep visual selection as well as the complete first/last word.
-            a, b = pad_word_interval(min(a, min(w['start_ms'] for w in selected)),
-                                     max(b, max(w['end_ms'] for w in selected)),
-                                     sources[sid]['duration_ms'], words)
+            # Pad WORD boundaries, not unrelated visual edges. Keep the raw
+            # selection when it already extends beyond the protected speech.
+            word_start, word_end = pad_word_interval(
+                min(w['start_ms'] for w in selected), max(w['end_ms'] for w in selected),
+                sources[sid]['duration_ms'], words)
+            a, b = min(a, word_start), max(b, word_end)
         segment['render_start_ms'], segment['render_end_ms'] = a, b
         previous = groups[-1] if groups else None
         if (previous and previous['source_id'] == sid

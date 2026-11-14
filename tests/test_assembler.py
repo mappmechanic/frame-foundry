@@ -116,3 +116,23 @@ def test_assemble_reads_saved_timeline_as_render_ssot(tmp_path, monkeypatch):
     assert result.duration_ms == 5000
     assert result.timeline_path.is_file()
     assert json.loads(result.spec_path.read_text())['segments'][0]['render_start_ms'] == 1000
+
+
+def test_visual_edges_outside_speech_are_not_unnecessarily_padded(tmp_path):
+    spec, analysis = narrative(tmp_path)
+    spec['segments'] = [selection('a', 0, 5000, 'one')]
+    analysis['words'] = [dict(source_id='a', start_ms=1000, end_ms=2000, text='inside')]
+    timeline, amended = assembler.build_timeline(spec, analysis)
+    assert amended['segments'][0]['render_start_ms'] == 0
+    assert amended['segments'][0]['render_end_ms'] == 5000
+    assert timeline.duration().to_seconds() == 5
+
+
+def test_exact_word_edges_are_protected_even_at_selection_boundary(tmp_path):
+    spec, analysis = narrative(tmp_path)
+    spec['segments'] = [selection('a', 2000, 4000, 'one')]
+    analysis['words'] = [dict(source_id='a', start_ms=1900, end_ms=2000, text='preceding'),
+                         dict(source_id='a', start_ms=4000, end_ms=4100, text='following')]
+    _, amended = assembler.build_timeline(spec, analysis)
+    assert amended['segments'][0]['render_start_ms'] == 1820
+    assert amended['segments'][0]['render_end_ms'] == 4220

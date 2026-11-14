@@ -140,7 +140,7 @@ def render_timeline(timeline, candidate_path, *, episode_dir):
                  f'pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,'
                  f'fps=30,tpad=stop_mode=clone:stop_duration={duration:.9f},'
                  f'trim=duration={duration:.9f},format=yuv420p[v]')
-        args = _ffmpeg() + ['-copyts', '-i', str(path)]
+        args = _ffmpeg() + ['-ss', f'{interval["start"]:.9f}', '-copyts', '-i', str(path)]
         if has_audio:
             audio = (f'[0:a:0]atrim=start={start:.9f}:end={end:.9f},'
                      f'asetpts=PTS-({start:.9f})/TB,aresample=48000:async=1:first_pts=0,'

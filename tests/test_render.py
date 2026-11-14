@@ -155,3 +155,51 @@ def test_subprocess_errors_timeout_and_argument_arrays(monkeypatch):
     monkeypatch.setattr(subprocess, 'run', timeout)
     with pytest.raises(StageError, match='could not complete'):
         render._run(['ffmpeg', '-version'])
+
+
+def test_mixed_sources_audio_and_silent_continuity(tmp_path):
+    spec, analysis = inputs(tmp_path, '16:9')
+    silent = tmp_path / 'silent.mp4'
+    generate(silent, 'blue', audio=False)
+    descriptor = dict(spec['sources'][0], source_id='silent', path=str(silent), has_audio=False)
+    spec['sources'].append(descriptor)
+    analysis['sources'] = deepcopy(spec['sources'])
+    spec['segments'].insert(1, dict(spec['segments'][0], segment_id='silent', source_id='silent'))
+    result = assemble(EpisodeContext('episode', tmp_path, 'teaser'), spec, analysis)
+    assert result.duration_ms == pytest.approx(3000, abs=70)
+    assert result.cut_times_ms == [1000, 2000]
+    stats = loudness(result.candidate_path)
+    assert -15 <= float(stats['input_i']) <= -13
+    assert float(stats['input_tp']) <= -1
+
+
+def test_nonzero_container_origin_with_seeking_and_delayed_audio(tmp_path):
+    spec, analysis = inputs(tmp_path, '16:9', delayed=True)
+    original = Path(spec['sources'][0]['path'])
+    shifted = tmp_path / 'shifted.mp4'
+    subprocess.run(['ffmpeg', '-v', 'error', '-y', '-i', str(original), '-c', 'copy',
+                    '-output_ts_offset', '10', str(shifted)], check=True, capture_output=True, timeout=30)
+    spec['sources'][0]['path'] = str(shifted)
+    analysis['sources'] = deepcopy(spec['sources'])
+    result = assemble(EpisodeContext('episode', tmp_path, 'teaser'), spec, analysis)
+    assert result.duration_ms == pytest.approx(2000, abs=70)
+    import array
+    decoded = subprocess.run(['ffmpeg', '-v', 'error', '-i', str(result.candidate_path), '-vn',
+                              '-f', 'f32le', '-ac', '1', '-ar', '48000', '-'],
+                             capture_output=True, check=True, timeout=30).stdout
+    samples = array.array('f', decoded)
+    assert max(abs(x) for x in samples[2400:14400]) < .0001
+    assert max(abs(x) for x in samples[31200:40800]) > .01
+
+
+def test_existing_silent_audio_is_not_invented(tmp_path):
+    spec, analysis = inputs(tmp_path, '16:9')
+    silent = tmp_path / 'existing-silence.mp4'
+    subprocess.run(['ffmpeg', '-v', 'error', '-y', '-i', spec['sources'][0]['path'],
+                    '-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=stereo', '-map', '0:v:0',
+                    '-map', '1:a:0', '-t', '3', '-c:v', 'copy', '-c:a', 'aac', str(silent)],
+                   check=True, capture_output=True, timeout=30)
+    spec['sources'][0]['path'] = str(silent)
+    analysis['sources'] = deepcopy(spec['sources'])
+    result = assemble(EpisodeContext('episode', tmp_path, 'teaser'), spec, analysis)
+    assert loudness(result.candidate_path)['input_i'] == '-inf'
