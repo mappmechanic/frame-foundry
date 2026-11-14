@@ -32,7 +32,7 @@ MAX_BYTES = 8_000_000
 ID = re.compile(r'[a-z0-9][a-z0-9-]{0,63}\Z')
 SHOT = re.compile(r'shot-[0-9]{2,6}\Z')
 MARKER = '.framefoundry-export.json'
-PUBLIC_CHECKS=set(CHECK_NAMES)|{'voiceover_integrity','narrative_schema','output_encoding','output_dimensions','output_fps','timeline_and_padding','render_duration','goal_duration','goal_coverage'}
+PUBLIC_CHECKS=set(CHECK_NAMES)|{'voiceover_integrity','narrative_schema','output_encoding','output_dimensions','output_fps','timeline_and_padding','render_duration','goal_duration','goal_coverage','overlay_safe_area','overlay_duration','overlay_text_limits','overlay_cut_clearance','overlay_render_binding'}
 
 class ExportError(RuntimeError): pass
 
@@ -169,6 +169,8 @@ def export_site(*, episodes_root=REPO/'episodes',evals_root=REPO/'evals',site_ro
         try:
             runs_root=stage/'runs'; runs_root.mkdir()
             for name in ('index.html','studio.html'): shutil.copyfile(regular(site,name),stage/name)
+            if (site/'pitch.html').exists() or (site/'pitch.html').is_symlink():
+                shutil.copyfile(regular(site,'pitch.html'),stage/'pitch.html')
             (stage/'robots.txt').write_text('User-agent: *\nDisallow: /\n')
             write_json(stage/MARKER,dict(schema_version='1.0',owner='framefoundry-static-export'))
             directories, latest, bad = collect(episodes,evals)
@@ -220,7 +222,22 @@ def export_site(*, episodes_root=REPO/'episodes',evals_root=REPO/'evals',site_ro
             timings=[w['coverage_minutes'] for w in history['work_orders'] if w.get('coverage_minutes') is not None]
             public_factory=dict(ticket_to_pr_minutes=statistics.median(timings) if timings else None,
                 scope='median first recorded PR-title coverage; not completion or delivery',sample_count=len(timings),
-                observed_at=history['fetched_at'],pr_url=PR_URL)
+                observed_at=history['fetched_at'],pr_url=PR_URL,
+                work_order_count=len(history['work_orders']),
+                pr_count=1 if isinstance(history.get('pull_request'),dict) else None,
+                commit_count=None,branch=None,base_sha=None,head_sha=None,git_observed_at=None)
+            # Local read-only Git scope; no auth, remote calls, or total-history count.
+            try:
+                def git(*args):
+                    result=subprocess.run(['git',*args],cwd=REPO,capture_output=True,text=True,timeout=5,check=True)
+                    return result.stdout.strip()
+                branch=git('branch','--show-current');base=git('rev-parse','main');head=git('rev-parse','HEAD')
+                commits=git('rev-list','--count',base+'..'+head)
+                if (re.fullmatch(r'[a-zA-Z0-9_./-]{1,160}',branch) and re.fullmatch(r'[a-f0-9]{40}',base)
+                    and re.fullmatch(r'[a-f0-9]{40}',head) and commits.isascii() and commits.isdecimal()):
+                    public_factory.update(commit_count=int(commits),branch=branch,base_sha=base,head_sha=head,git_observed_at=now)
+            except (OSError,subprocess.SubprocessError):
+                pass
             trend=[dict(id=r['episode_id'],J=r['scores']['J'],Q=r['scores']['Q'],D=r['scores']['D'],quality_per_dollar=r['qpd']) for r in metrics['rows']]
             write_json(runs_root/'scoreboard.json',dict(schema_version='1.0',generated_at=now,cohort=cohort,latest=runs[0] if runs else None,
                                                      trend=trend,factory=public_factory))

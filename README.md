@@ -677,3 +677,13 @@ Arizona full-source technical check measured -13.91 LUFS / -1.47 dBTP and genera
 a Contact Sheet, but had no reliable section/ASR/VO acceptance; the keyed command
 above supplies that separate live verification. Existing historical runs stay
 unchanged.
+
+### Projector pitch (WO-13)
+
+`make site` now includes the eight-slide `/pitch` page with left/right and visible
+navigation. It reads both `/runs/index.json` and `/runs/scoreboard.json`; metrics
+are recorded snapshots, not a live rendering API. Factory commit/count scope and
+first recorded PR-title coverage are labeled. Run trends are derived from real
+exported artifacts, never seeded with the requested 11.9/40.6 numbers. Missing
+clips/metrics remain N/A. The Decisions result slide stays **pending evaluation**
+until a matched benchmark exists; campaign functionality is roadmap-only.

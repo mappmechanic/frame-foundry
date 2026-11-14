@@ -207,3 +207,42 @@ def test_unowned_or_malformed_marker_cannot_authorize_deletion(setup,marker):
     public=setup[2]/'public';public.mkdir();(public/exporter.MARKER).write_text(marker);(public/'keep').write_text('safe')
     with pytest.raises(exporter.ExportError,match='unowned'):export(setup)
     assert (public/'keep').read_text()=='safe'
+
+
+def test_optional_pitch_page_is_copied_without_requiring_old_fixtures(setup):
+    site=setup[2]
+    # Existing two-page fixtures continue to export without pitch.html.
+    export(setup)
+    assert not (site/'public/pitch.html').exists()
+    shutil.copyfile(exporter.REPO/'site/pitch.html',site/'pitch.html')
+    export(setup)
+    assert (site/'public/pitch.html').read_bytes()==(site/'pitch.html').read_bytes()
+
+
+def test_pitch_symlink_is_not_followed_and_previous_bundle_survives(setup,tmp_path):
+    export(setup);site=setup[2];previous=(site/'public/runs/index.json').read_bytes()
+    outside=tmp_path/'private.html';outside.write_text('SECRET')
+    (site/'pitch.html').symlink_to(outside)
+    with pytest.raises(ValueError):export(setup)
+    assert (site/'public/runs/index.json').read_bytes()==previous
+
+
+def test_overlay_checks_are_allowlisted_but_private_payloads_are_not():
+    names={'overlay_safe_area','overlay_duration','overlay_text_limits','overlay_cut_clearance','overlay_render_binding'}
+    records=[dict(name=n,status='pass',reason='SECRET',measurements={'source':'/Users/private'}) for n in names]
+    records.append(dict(name='private_extra',status='pass',reason='SECRET'))
+    public=exporter.checks(records)
+    assert {r['name'] for r in public}==names
+    assert all(set(r)=={'name','status','reason'} and r['reason'] is None for r in public)
+
+
+def test_factory_commit_provenance_is_local_scoped_and_safe(setup):
+    export(setup)
+    factory=json.loads((setup[2]/'public/runs/scoreboard.json').read_text())['factory']
+    assert factory['work_order_count']==2 and factory['pr_count'] is None
+    assert factory['commit_count'] is None or isinstance(factory['commit_count'],int)
+    if factory['commit_count'] is not None:
+        assert len(factory['base_sha'])==len(factory['head_sha'])==40
+        expected=subprocess.run(['git','rev-list','--count',factory['base_sha']+'..'+factory['head_sha']],cwd=exporter.REPO,capture_output=True,text=True,check=True)
+        assert factory['commit_count']==int(expected.stdout)
+    assert 'SECRET' not in json.dumps(factory)
