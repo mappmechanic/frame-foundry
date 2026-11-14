@@ -30,7 +30,6 @@ from pipelines.ffmpeg.eval_judge import CRITERIA
 
 MAX_BYTES = 8_000_000
 ID = re.compile(r'[a-z0-9][a-z0-9-]{0,63}\Z')
-SAFE_NAME = re.compile(r'[a-zA-Z0-9_. -]{1,80}\Z')
 SHOT = re.compile(r'shot-[0-9]{2,6}\Z')
 MARKER = '.framefoundry-export.json'
 PUBLIC_CHECKS=set(CHECK_NAMES)|{'voiceover_integrity','narrative_schema','output_encoding','output_dimensions','output_fps','timeline_and_padding','render_duration','goal_duration','goal_coverage'}
@@ -95,6 +94,13 @@ def checks(items):
     return [dict(name=c['name'],status=c['status'],reason=None if c['status']=='pass' else 'Recorded check did not pass')
             for c in items if isinstance(c,dict) and c.get('name') in PUBLIC_CHECKS
             and c.get('status') in ('pass','fail','not_run','unavailable')]
+
+
+def passed_evaluation(report):
+    names={c['name'] for c in report['gates']['checks']}
+    return (report['scores']['G']==1 and report['gates']['passed']
+            and set(CHECK_NAMES).issubset(names)
+            and all(c['status']=='pass' for c in report['gates']['checks']))
 
 
 def public_eval(report):
@@ -172,11 +178,11 @@ def export_site(*, episodes_root=REPO/'episodes',evals_root=REPO/'evals',site_ro
                 if report is None: omitted.append(dict(id=eid,reason_code='evaluation_unavailable'));continue
                 try:
                     canonical=read_json(regular(directory,'eval-report.json'));validate_eval_report(canonical)
-                    if canonical['episode_id']!=eid or canonical['scores']['G']!=1 or not canonical['gates']['passed']:raise ValueError()
+                    if canonical['episode_id']!=eid or not passed_evaluation(canonical):raise ValueError()
                     qa=read_json(regular(directory,'qa-report.json'));validate_report(qa)
                     if qa['episode_id']!=eid or not qa['passed']: raise ValueError()
                     if not (-15<=qa['integrated_lufs']<=-13 and qa['true_peak_dbtp']<=-1): raise ValueError()
-                    if report['scores']['G']!=1 or not report['gates']['passed'] or any(c['status']!='pass' for c in report['gates']['checks']): raise ValueError()
+                    if not passed_evaluation(report):raise ValueError()
                     source=regular(directory,'finished.mp4');sheet=regular(directory,'contact-sheet.jpg')
                     digest=sha256_file(source)
                     if not source.stat().st_size or digest!=report['render_hash'] or digest!=canonical['render_hash']: raise ValueError()

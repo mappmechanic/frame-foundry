@@ -28,7 +28,7 @@ def run_fixture(setup,report,eid='az-0900',*,created='2026-11-14T17:00:00Z',pass
     ev=report(eid,created=created,passed=passed)
     ev['goal']='/Users/rahat/private.mp4 token=SECRET'
     ev['limitations']=['private@example.org SECRET']
-    ev['gates']['checks']=[dict(name='readable_media',status='pass' if passed else 'fail',reason=None)]
+    ev['gates']['checks']=[dict(name=name,status='pass' if passed else 'fail',reason=None) for name in exporter.CHECK_NAMES]
     qa=failure_report(EpisodeContext(eid,directory,'/Users/rahat/private.mp4'),StageError('FIXTURE','validator','SECRET'))
     if passed:
         qa.update(stage='delivery',passed=True,result='passed',coverage=dict(status='full',limitations=[]),error=None,output_path='finished.mp4',timeline_path='timeline.otio',
@@ -81,13 +81,14 @@ def test_real_ids_latest_picker_and_public_projections_exclude_private_data(setu
     assert board['cohort']['shipped']==3 and board['cohort']['qa_pass_rate']==1
 
 
-@pytest.mark.parametrize('kind',['qa-fail','qa-invalid','hash-stale','eval-missing','sheet-missing','sheet-corrupt','media-symlink','qa-symlink','eval-symlink','directory-symlink','eval-failed'])
+@pytest.mark.parametrize('kind',['qa-fail','qa-invalid','hash-stale','eval-missing','sheet-missing','sheet-corrupt','media-symlink','qa-symlink','eval-symlink','directory-symlink','eval-failed','eval-missing-gate'])
 def test_unverified_or_unsafe_artifacts_are_never_exported(setup,report,monkeypatch,kind):
     d,ev,qa=run_fixture(setup,report,passed=kind!='eval-failed')
     if kind=='qa-fail':qa.update(passed=False,result='failed',output_path=None,error=StageError('BAD','validator','failed').as_dict());(d/'qa-report.json').write_text(json.dumps(qa))
     if kind=='qa-invalid':qa['checks']=[];(d/'qa-report.json').write_text(json.dumps(qa))
     if kind=='hash-stale':(d/'finished.mp4').write_bytes(b'new render')
     if kind=='eval-missing':(d/'eval-report.json').unlink()
+    if kind=='eval-missing-gate':ev['gates']['checks'].pop();(d/'eval-report.json').write_text(json.dumps(ev))
     if kind=='sheet-missing':(d/'contact-sheet.jpg').unlink()
     if kind=='sheet-corrupt':(d/'contact-sheet.jpg').write_bytes(b'bad')
     mapping={'media-symlink':'finished.mp4','qa-symlink':'qa-report.json','eval-symlink':'eval-report.json'}
