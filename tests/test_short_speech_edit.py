@@ -63,3 +63,11 @@ def test_no_qualifying_hook_is_explicit_partial_not_fake_detection():
     result=complete(a,parse_goal(a['goal']),response,a['candidates'])
     assert result['coverage']['status']=='partial'
     assert any('Hook constraint unavailable' in l for l in result['coverage']['limitations'])
+
+
+def test_known_screen_is_not_promoted_merely_for_camera_motion():
+    a=analysis();screen=a['candidates'][0];screen['frame_in_window']=True
+    screen['quality']['motion']=1.0
+    response=dict(segments=[dict(source_id=screen['source_id'],raw_start_ms=screen['start_ms'],raw_end_ms=screen['end_ms'],reason='screen',semantic_labels=['screen'])],coverage=dict(status='full',limitations=[]),assumptions=[])
+    result=complete(a,parse_goal(a['goal']),response,a['candidates'])
+    assert not any(s['source_id']==screen['source_id'] and s['raw_start_ms']==screen['start_ms'] for s in result['segments'])

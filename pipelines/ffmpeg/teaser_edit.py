@@ -99,7 +99,7 @@ def complete(analysis,intent,response,pool):
         if not options:continue
         c=options[0];labels=s.get('semantic_labels',[]) if c.get('frame_in_window') else []
         semantic[c['candidate_id']]=labels
-        if set(labels)&{'interior','screen'} and not set(labels)&{'people','action'} and not hook(c):
+        if set(labels)&{'interior','screen'} and not set(labels)&{'people','action'} and not ((c['quality'].get('face_count') or 0)>0 or (c['quality'].get('person_count') or 0)>0):
             blocked.add(c['candidate_id'])
             continue
         model.append((c,s['reason'],labels))
@@ -107,7 +107,7 @@ def complete(analysis,intent,response,pool):
     if qualified:
         first=max(qualified,key=lambda item:score(item[0],item[2]));add(*first)
     else:
-        alternatives=[c for c in pool if hook(c)]
+        alternatives=[c for c in pool if hook(c) and c['candidate_id'] not in blocked]
         if alternatives:add(max(alternatives,key=score),'Locally enforced people/person or high-motion opening; detector/sparse evidence, not semantic certainty')
     for c,reason,labels in model:add(c,reason,labels)
     # Interleave sources so adjacent touching windows cannot coalesce into long shots.
