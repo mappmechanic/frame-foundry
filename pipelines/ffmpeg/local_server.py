@@ -114,6 +114,21 @@ def create_app(*,episodes_root=REPO/'episodes',evals_root=None,data_root=None,sp
             configuration();available=True
         except StageError:pass
         return dict(voiceover_available=available,max_upload_bytes=max_upload_bytes,max_files=40,poll_interval_ms=1000)
+    @app.get('/api/campaigns')
+    def campaigns():
+        from .campaigns import load, project
+        try:
+            manifest=load(root/'campaigns/arizona-reels.json')
+            result=project(manifest)
+            for variant in result['variants']:
+                if variant['episode_id'] is None: continue
+                try: episode=manager.get(variant['episode_id'])
+                except (StageError,ValueError,FileNotFoundError,OSError): continue
+                variant['status']='failed' if episode.get('error') or episode.get('qa_passed') is False else 'active' if episode.get('active') else 'available' if episode.get('evaluation_status')=='available' else 'unavailable'
+                if episode.get('evaluation_status')=='available':
+                    variant['metrics']={k:episode.get(k) for k in ('Q','D','model_cost')}
+            return dict(schema_version='1.0',campaigns=[result])
+        except (ValueError,OSError): raise HTTPException(503,'Campaign manifest unavailable')
     @app.get('/api/episodes')
     def history():return dict(episodes=manager.history())
     @app.get('/api/episodes/{eid}')

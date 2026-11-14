@@ -18,6 +18,7 @@ import tempfile
 
 REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path: sys.path.insert(0, str(REPO))
+from pipelines.ffmpeg.campaigns import load as load_campaign, project as project_campaign
 from PIL import Image
 from pipelines.ffmpeg.contracts import read_json, validate_report
 from pipelines.ffmpeg.evaluator import validate_eval_report, sha256_file
@@ -209,6 +210,9 @@ def export_site(*, episodes_root=REPO/'episodes',evals_root=REPO/'evals',site_ro
                 runs.append({k:run[k] for k in ('id','created_at','scores','cost','first_try_passed','elapsed_seconds','video_url','contact_sheet_url')} |
                             dict(data_url=url+'run.json',qa_passed=True))
             runs.sort(key=lambda r:(timestamp(r['created_at']),r['id']),reverse=True)
+            campaign=load_campaign(episodes/'campaigns/arizona-reels.json')
+            failures=[eid for eid, report in latest.items() if report['gates']['passed'] is False]
+            write_json(runs_root/'campaigns.json',dict(schema_version='1.0',campaigns=[project_campaign(campaign,runs,failed_ids=failures)]))
             now=datetime.now(timezone.utc).isoformat(); lead=runs[0]['id'] if runs else None
             write_json(runs_root/'index.json',dict(schema_version='1.0',generated_at=now,mode='recorded-demo',lead_run_id=lead,
                 latest_run_id=lead,runs=runs,omitted=omitted,requested_ids=['az-0700','az-0835']))
