@@ -186,6 +186,8 @@ def assemble(ctx: EpisodeContext, spec: dict, analysis: dict, *, attempt: int = 
         raise StageError('ATTEMPT_INVALID', 'assembler', 'Attempt must be a positive integer')
     if spec.get('episode_id') != ctx.episode_id or spec.get('goal') != ctx.goal:
         raise StageError('PLAN_INVALID', 'assembler', 'Plan identity differs from context')
+    from .disk_safety import require_free_disk
+    require_free_disk(ctx.episode_dir,stage='assembler')
     timeline, amended = build_timeline(spec, analysis)
     directory = Path(ctx.episode_dir) / 'work' / f'attempt-{attempt}'
     directory.mkdir(parents=True, exist_ok=True)

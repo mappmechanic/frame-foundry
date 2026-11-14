@@ -59,6 +59,7 @@ def main(argv=None):
     parser.add_argument('--no-planner-retry',action='store_true')
     parser.add_argument('--repair-from')
     parser.add_argument('--voiceover',action='store_true')
+    parser.add_argument('--keep-work',action='store_true')
     parser.add_argument('--fetch-only', action='store_true')
     args = parser.parse_args(argv)
     if not (3, 10) <= sys.version_info[:2] < (3, 14):
@@ -81,6 +82,7 @@ def main(argv=None):
     if args.evals_root: command += ['--evals-root',str(args.evals_root)]
     if args.repair_from: command += ['--repair-from',args.repair_from]
     if args.voiceover: command += ['--voiceover']
+    if args.keep_work: command += ['--keep-work']
     if args.no_planner_retry: command += ['--no-planner-retry']
     return subprocess.run(command, check=False, env=env).returncode
 

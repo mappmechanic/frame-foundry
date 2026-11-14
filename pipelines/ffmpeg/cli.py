@@ -38,7 +38,7 @@ def _judge_repair_fix(evaluation):
     return fix.strip()[:160] if weak else None
 
 
-def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixture=None,provider='env',visual_only=False,evals_root=None,eval_labels=None,planner_retry=True,asr_provider='auto',voiceover=False,repair_from=None,target_seconds=None,aspect=None):
+def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixture=None,provider='env',visual_only=False,evals_root=None,eval_labels=None,planner_retry=True,asr_provider='auto',voiceover=False,repair_from=None,target_seconds=None,aspect=None,keep_work=False):
     if visual_only and transcript_fixture is not None:raise StageError('INPUT_CONFLICT','refinery','Choose visual-only or a transcript fixture, not both')
     if not goal.strip():raise StageError('GOAL_EMPTY','refinery','Goal must not be blank')
     if not Path(footage_dir).is_dir():raise StageError('INPUT_EMPTY','refinery','Footage directory is unavailable')
@@ -46,6 +46,8 @@ def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixt
     parse_goal(goal,target_seconds=target_seconds,aspect=aspect)
     episode_id=episode_id or datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S-')+uuid.uuid4().hex[:6]
     root=Path(episodes_root).resolve()
+    from .disk_safety import require_free_disk,cleanup_work_media
+    require_free_disk(root)
     with episode_lock(root):
         directory=resolve_episode(root,episode_id)
         if directory.exists():raise StageError('EPISODE_EXISTS','refinery','Episode identity already exists')
@@ -213,6 +215,14 @@ def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixt
                     report.update(passed=False,result='failed',output_path=None,error=StageError('EVAL_PERSISTENCE_FAILED','validator','Evaluation or persistence failed: '+type(eval_error).__name__).as_dict())
                     _retain_diagnostic(directory,last_result,report)
                     atomic_write_json(directory/'qa-report.json',report);save_state(ctx,'failed')
+                # Only after final artifacts, QA and evaluation are safely persisted.
+                # Failed/interrupted work remains diagnostic; cleanup cannot revoke delivery.
+                if report['passed'] and not keep_work:
+                    try:
+                        cleanup=cleanup_work_media(directory)
+                        atomic_write_json(directory/'work-cleanup.json',cleanup)
+                        if cleanup['failed']:print('Warning: some work media could not be removed',file=__import__('sys').stderr)
+                    except OSError:print('Warning: work-media cleanup incomplete',file=__import__('sys').stderr)
 
 
 def _run_main(argv=None):
@@ -222,13 +232,14 @@ def _run_main(argv=None):
     p.add_argument('--visual-only',action='store_true',help='Explicit diagnostic mode without ASR; speech integrity remains unverified')
     p.add_argument('--repair-from',help='Optional prior episode whose scored weakest source interval can be replaced locally with no paid call')
     p.add_argument('--voiceover',action='store_true',help='Opt in to cached ElevenLabs intro narration; requires ELEVENLABS_API_KEY')
+    p.add_argument('--keep-work',action='store_true',help='Retain intermediate work media after successful delivery')
     p.add_argument('--duration-seconds',type=float,help='Explicit duration override, 5–120 seconds')
     p.add_argument('--aspect',choices=['9:16','16:9'],help='Explicit aspect override without changing original Goal')
     args=p.parse_args(argv)
     def terminate(signum,frame):raise KeyboardInterrupt()
     old=signal.signal(signal.SIGTERM,terminate)
     try:
-        report=run_episode(args.footage_dir,args.goal,episodes_root=args.episodes_root,episode_id=args.episode,transcript_fixture=args.transcript_fixture,visual_only=args.visual_only,evals_root=args.evals_root,eval_labels=args.eval_labels,planner_retry=not args.no_planner_retry,asr_provider=args.asr_provider,voiceover=args.voiceover,repair_from=args.repair_from,target_seconds=args.duration_seconds,aspect=args.aspect)
+        report=run_episode(args.footage_dir,args.goal,episodes_root=args.episodes_root,episode_id=args.episode,transcript_fixture=args.transcript_fixture,visual_only=args.visual_only,evals_root=args.evals_root,eval_labels=args.eval_labels,planner_retry=not args.no_planner_retry,asr_provider=args.asr_provider,voiceover=args.voiceover,repair_from=args.repair_from,target_seconds=args.duration_seconds,aspect=args.aspect,keep_work=args.keep_work)
         evaluation_path=Path(args.episodes_root)/report['episode_id']/'eval-report.json'
         evaluation=read_json(evaluation_path) if evaluation_path.is_file() else None
         metrics=dict(Q=evaluation['scores']['Q'],J=evaluation['scores']['J'],D=evaluation['scores']['D'],G=evaluation['scores']['G'],quality_per_dollar=evaluation['model_cost']['quality_per_dollar']) if evaluation else dict(Q=None,J=None,D=None,G=None,quality_per_dollar=None)

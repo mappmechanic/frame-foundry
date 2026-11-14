@@ -83,6 +83,8 @@ class JobManager:
                 if folder.is_symlink():raise ValueError('Unsafe upload')
             else:folder=payload['footage_path']
             folder=self.footage(folder)
+            from .disk_safety import require_free_disk
+            require_free_disk(self.root)
             # Probe existing CLI ownership; the child also takes the same lock.
             with episode_lock(self.root):pass
             try:budget=Decimal(os.environ.get('FRAMEFOUNDRY_EPISODE_API_BUDGET_USD','0.10'))

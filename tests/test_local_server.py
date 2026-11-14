@@ -247,3 +247,11 @@ def test_invalid_narrative_does_not_crash_preview(rig):
     response=c.get('/api/episodes/bad-spec');assert response.status_code==200
     assert 'Narrative artifact invalid or unavailable' in response.json()['limitations']
     assert not response.json()['video_url']
+
+
+def test_low_disk_api_fails_without_launch(rig,monkeypatch):
+    c,m,folder,spawned=rig
+    monkeypatch.setattr('pipelines.ffmpeg.disk_safety.shutil.disk_usage',lambda p:SimpleNamespace(free=120_000_000))
+    response=c.post('/api/jobs',json=payload(folder))
+    assert response.status_code==400 and '1.000 GB required' in response.json()['detail']
+    assert not spawned
