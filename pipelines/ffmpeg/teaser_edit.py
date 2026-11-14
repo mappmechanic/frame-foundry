@@ -91,7 +91,7 @@ def score(candidate,labels=()):
 
 
 # Versioned conservative sparse-frame guards, not calibrated aesthetic scores.
-CLOSING_POLICY = 'closing-v1'
+CLOSING_POLICY = 'closing-v2'
 CLOSING_MIN_EXPOSURE = 15.0  # candidate luma/clipping score, 0..100
 CLOSING_MIN_SHARPNESS = 8.0  # candidate positive Laplacian mean * 4, 0..100
 CLOSING_MIN_BRIGHTNESS = .12  # refinery sampled luma mean, 0..1
@@ -123,7 +123,7 @@ def closing_qualifies(candidate, segment, labels=()):
                     and not q.get('cue_method', 'unavailable').startswith('unavailable')
                     and ((q.get('face_count') or 0) > 0 or (q.get('person_count') or 0) > 0))
     semantic = (_inside(candidate.get('frame_time_ms'), segment)
-                and bool(set(labels) & {'people', 'action', 'scenic_wide'}))
+                and bool(set(labels) & {'people', 'scenic_wide'}))
     return bool(local_people or semantic)
 
 
@@ -186,7 +186,7 @@ def enforce_closing(entries, pool, semantic, blocked):
                 if end > c['end_ms'] or (c.get('edit_kind') != 'broll' and end != c['end_ms']):
                     continue
                 segment = dict(source_id=c['source_id'], raw_start_ms=c['start_ms'], raw_end_ms=end,
-                               reason='Evidence-backed closing payoff; in-window people/action or scenic wide; closing-v1 numeric guards')
+                               reason='Evidence-backed closing payoff; in-window people/faces or scenic wide; closing-v2 numeric guards')
                 labels = semantic.get(c['candidate_id'], ())
                 if not closing_qualifies(c, segment, labels):
                     continue
@@ -293,7 +293,7 @@ def complete(analysis,intent,response,pool):
     closing=[closing_qualifies(c,s,l) for c,s,l in ordered[-2:]]
     result['assumptions'].append(f'{CLOSING_POLICY}: final two closing qualifiers={closing}; exposure>={CLOSING_MIN_EXPOSURE:g}, sharpness>={CLOSING_MIN_SHARPNESS:g}; sampled brightness>={CLOSING_MIN_BRIGHTNESS:g} when available. Missing/out-of-window quality or subject evidence cannot qualify; sparse cues are not exhaustive inspection.')
     if not closing[-1]:
-        limitations.append('Closing constraint unavailable: final shot lacks safe in-window people/action/scenic evidence with measured exposure and sharpness; no invented scenic labels or high-motion-only qualification')
+        limitations.append('Closing constraint unavailable: final shot lacks safe in-window people/faces/scenic evidence with measured exposure and sharpness; no invented scenic labels or high-motion-only qualification')
     elif len(closing)<2 or not closing[-2]:
         limitations.append('Closing constraint partial: only final shot qualifies; two safe noncoalescing closing choices unavailable without changing hook/duration/word protection')
     result['coverage']=dict(status='partial' if limitations else 'full',limitations=limitations)

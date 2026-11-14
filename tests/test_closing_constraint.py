@@ -60,7 +60,7 @@ def matching(pool, s):
     return next(c for c in pool if c['source_id'] == s['source_id'] and c['start_ms'] == s['raw_start_ms'])
 
 
-@pytest.mark.parametrize('labels', [['people'], ['scenic_wide'], ['action']])
+@pytest.mark.parametrize('labels', [['people'], ['scenic_wide']])
 def test_selected_evidenced_payoff_and_hook_preserved(labels):
     pool = analysis()['candidates']
     hook = evidence(pool[1])
@@ -233,3 +233,8 @@ def test_touching_same_source_payoffs_are_ordered_without_coalescing():
     assert ordered[0] is entries[0]
     assert all(closing_qualifies(c,s,l) for c,s,l in ordered[-2:])
     assert all(a[1]['raw_end_ms'] != b[1]['raw_start_ms'] for a,b in zip(ordered,ordered[1:]))
+
+
+def test_action_alone_does_not_qualify_as_people_or_scenic_closer():
+    c=evidence(analysis()['candidates'][8],people=False)
+    assert not closing_qualifies(c,segment(c),['action'])
