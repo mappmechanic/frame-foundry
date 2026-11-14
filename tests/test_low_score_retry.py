@@ -89,7 +89,8 @@ def run(media, tmp_path, provider, **kwargs):
 ])
 def test_scored_weak_edit_gets_one_concrete_replan_and_no_stale_final_scores(media, tmp_path, scores, expected_j):
     provider, calls = offline_provider(scores)
-    report, evaluation, root = run(media, tmp_path, provider)
+    # Byte-level diagnostic comparisons explicitly retain intermediate renders.
+    report, evaluation, root = run(media, tmp_path, provider, keep_work=True)
     assert [role for role, _ in calls] == ['planner', 'judge', 'planner']
     assert calls[-1][1]['fix_instruction'] == FIX
     assert len(report['attempts']) == 2 <= 3
@@ -113,7 +114,8 @@ def test_scored_weak_edit_gets_one_concrete_replan_and_no_stale_final_scores(med
 
 def test_identical_repair_reuses_only_hash_matched_judgment_without_dispatch(media, tmp_path):
     provider, calls = offline_provider({c: 3 for c in CRITERIA}, change_render=False)
-    report, evaluation, root = run(media, tmp_path, provider)
+    # Byte-level diagnostic comparisons explicitly retain intermediate renders.
+    report, evaluation, root = run(media, tmp_path, provider, keep_work=True)
     assert [role for role, _ in calls] == ['planner', 'judge', 'planner']
     assert len(report['attempts']) == 2
     assert evaluation['judge']['cache_hit'] and evaluation['scores']['J'] == 0.5
@@ -123,9 +125,12 @@ def test_identical_repair_reuses_only_hash_matched_judgment_without_dispatch(med
 
 def test_good_score_does_not_replan_even_with_a_fix(media, tmp_path):
     provider, calls = offline_provider({c: 4 for c in CRITERIA})
-    report, evaluation, _ = run(media, tmp_path, provider)
+    report, evaluation, root = run(media, tmp_path, provider)
     assert [role for role, _ in calls] == ['planner', 'judge']
     assert len(report['attempts']) == 1 and evaluation['scores']['J'] == 0.75
+    assert not (root / 'work/attempt-1/candidate.mp4').exists()
+    assert read_json(root / 'work-cleanup.json')['deleted'] > 0
+    assert (root / 'finished.mp4').is_file()
 
 
 def test_retry_opt_out_still_applies_to_low_score(media, tmp_path):
