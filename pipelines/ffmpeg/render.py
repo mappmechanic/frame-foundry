@@ -167,10 +167,17 @@ def render_timeline(timeline, candidate_path, *, episode_dir):
         # duration for audio and output mapping; do not accumulate AAC priming.
         frames = output_frames(interval['duration'])
         duration = frames / 30
+        # Portrait teasers fill the frame with a proportional center crop.
+        # Explicit horizontal output retains the existing proportional fit.
+        framing = (
+            f'scale={width}:{height}:force_original_aspect_ratio=increase:force_divisible_by=2,'
+            f'crop={width}:{height}:(iw-ow)/2:(ih-oh)/2'
+            if aspect == '9:16' else
+            f'scale={width}:{height}:force_original_aspect_ratio=decrease:force_divisible_by=2,'
+            f'pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black')
         video = (f'[0:v:0]trim=start={start:.9f}:end={end:.9f},'
                  f'setpts=PTS-({start:.9f})/TB,'
-                 f'scale={width}:{height}:force_original_aspect_ratio=decrease:force_divisible_by=2,'
-                 f'pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,'
+                 f'{framing},setsar=1,'
                  f'fps=30:start_time=0,tpad=stop_mode=clone:stop_duration={duration:.9f},'
                  f'trim=duration={duration:.9f},format=yuv420p[v]')
         args = _ffmpeg() + ['-ss', f'{interval["start"]:.9f}', '-copyts', '-i', str(path)]

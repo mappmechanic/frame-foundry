@@ -18,12 +18,12 @@ import subprocess
 import tempfile
 
 from jsonschema import Draft202012Validator
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 
 from .llm_provider import ProviderError
 
-PROMPT_VERSION = 'eval-judge-rubric-1.0'
-SHEET_VERSION = 'eval-judge-sheet-1.0'
+PROMPT_VERSION = 'eval-judge-rubric-1.1'
+SHEET_VERSION = 'eval-judge-sheet-1.1'
 MAX_OUTPUT_TOKENS = 1024
 SHEET_MAX_SIDE = 640
 CRITERIA = ['goal_fit', 'moment_importance', 'story_arc', 'variety', 'opening', 'ending']
@@ -32,10 +32,10 @@ SHEET_NAME = 'eval-judge-sheet.jpg'
 
 ANCHORS = {
     'goal_fit': 'How completely the edit delivers the exact Goal as stated.',
-    'moment_importance': 'Whether chosen shots look like the important/meaningful moments rather than filler.',
+    'moment_importance': 'Whether chosen shots show meaningful moments rather than filler. For family-trip Goals, favor people, shared experiences, scenic destinations and activities over static rooms or TV, unless explicitly central to the Goal.',
     'story_arc': 'Whether shot order reads as a coherent progression (setup, development, payoff).',
-    'variety': 'Diversity of subjects, places and framing without repetition.',
-    'opening': 'Whether the first shot is an immediate, engaging hook.',
+    'variety': 'Diversity of subjects, places and framing without repetition; teaser visual shots should average 2-3 seconds where speech protection permits. Do not infer word-cut safety from stills.',
+    'opening': 'Whether the first shot is an immediate, meaningful hook for the stated Goal, not generic filler.',
     'ending': 'Whether the final shot gives a satisfying close.',
 }
 SCALE = {1: 'unsupported or absent', 2: 'weak or incomplete', 3: 'adequate with evident gaps',
@@ -52,7 +52,7 @@ SYSTEM = (
     'fix_instruction: one concrete edit instruction of at most 160 characters. '
     'Set unsupported_goal=true if the footage cannot satisfy the Goal; then goal_fit must be <= 2. '
     'verdict is "pass" only if the mean score is >= 3 and goal_fit >= 3, otherwise "fail". '
-    'List limitations of what you could judge from still frames. Respond with the JSON object only.')
+    'Apply family-trip preferences only for family-trip Goals. Stills cannot verify ASR word protection or audio; this score never replaces the independent word-integrity gate. List limitations of what you could judge from still frames. Respond with the JSON object only.')
 
 
 def response_schema(shot_ids):
@@ -88,15 +88,18 @@ def build_judge_sheet(video_path, shots, output, *, render_w, render_h):
     n = len(shots)
     if not n:
         raise ValueError('No shots to sheet')
+    label_h = 18
     best = None
     for cols in range(1, n + 1):
         rows = math.ceil(n / cols)
-        scale = min(SHEET_MAX_SIDE / (cols * render_w), SHEET_MAX_SIDE / (rows * render_h))
+        scale = min(SHEET_MAX_SIDE / (cols * render_w),
+                    (SHEET_MAX_SIDE / rows - label_h) / render_h)
         if best is None or scale > best[0]:
             best = (scale, cols, rows)
     scale, cols, rows = best
-    tw, th = max(16, int(render_w * scale)), max(16, int(render_h * scale))
-    sheet = Image.new('RGB', (cols * tw, rows * th), 'black')
+    tw, th = max(1, int(render_w * scale)), max(1, int(render_h * scale))
+    tile_h = th + label_h
+    sheet = Image.new('RGB', (cols * tw, rows * tile_h), 'black')
     with tempfile.TemporaryDirectory(prefix='eval-sheet-') as tmp:
         for i, shot in enumerate(shots):
             mid = (shot['timeline_start_ms'] + shot['timeline_end_ms']) / 2000
@@ -105,11 +108,16 @@ def build_judge_sheet(video_path, shots, output, *, render_w, render_h):
                             '-frames:v', '1', '-vf', f'scale={tw}:{th}', '-threads', '1', str(frame)],
                            check=True, capture_output=True, timeout=120)
             with Image.open(frame) as image:
-                tile = image.convert('RGB').resize((tw, th))
+                tile = Image.new('RGB', (tw, tile_h), 'black')
+                tile.paste(image.convert('RGB'), (0, 0))
             draw = ImageDraw.Draw(tile)
-            draw.rectangle((0, 0, min(tw, 7 * len(shot['shot_id']) + 6), 13), fill='black')
-            draw.text((3, 1), shot['shot_id'], fill='yellow')
-            sheet.paste(tile, ((i % cols) * tw, (i // cols) * th))
+            font_size = 11
+            font = ImageFont.load_default(size=font_size)
+            while font_size > 6 and draw.textlength(shot['shot_id'], font=font) > tw - 4:
+                font_size -= 1
+                font = ImageFont.load_default(size=font_size)
+            draw.text((2, th + 2), shot['shot_id'], fill='yellow', font=font)
+            sheet.paste(tile, ((i % cols) * tw, (i // cols) * tile_h))
     output = Path(output)
     sheet.save(output, 'JPEG', quality=80)
     return dict(path=str(output), size=list(sheet.size), tiles=n, columns=cols)

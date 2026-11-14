@@ -7,19 +7,27 @@ from .contracts import atomic_write_json
 def build_contact_sheet(video,cut_times_ms,output):
     output=Path(output);output.parent.mkdir(parents=True,exist_ok=True)
     info=probe(video);duration=info['duration_ms']; samples=[]
+    # Evidence keeps the actual output aspect, with labels outside the image.
+    video_stream=info['video']
+    w,h=video_stream['width'],video_stream['height']
+    scale=min(256/w,240/h);tw,th=max(1,round(w*scale)),max(1,round(h*scale))
+    label_h=36
     for index,t in enumerate(cut_times_ms):
         for side,offset in [('before',-34),('after',34)]:samples.append((index,side,max(0,min(duration-50,t+offset))))
     if not samples:samples=[(0,'representative',duration//2)]
     tiles=[];rows=[]
     for index,(cut,side,ms) in enumerate(samples):
         path=output.parent/f'qa-frame-{index}.jpg'
-        run(['ffmpeg','-y','-v','error','-ss',str(ms/1000),'-i',str(video),'-frames:v','1','-vf','scale=240:160:force_original_aspect_ratio=decrease','-threads','1',str(path)])
+        run(['ffmpeg','-y','-v','error','-ss',str(ms/1000),'-i',str(video),'-frames:v','1','-vf',f'scale={tw}:{th}','-threads','1',str(path)])
         with Image.open(path) as image:
-            tile=Image.new('RGB',(256,192),'black');tile.paste(image,((256-image.width)//2,0));ImageDraw.Draw(tile).text((5,170),f'cut {cut} {side} {ms}ms',fill='white')
+            tile=Image.new('RGB',(tw,th+label_h),'black');tile.paste(image,(0,0))
+            draw=ImageDraw.Draw(tile);draw.text((4,th+3),f'cut {cut} {side}',fill='white')
+            draw.text((4,th+18),f'{ms}ms',fill='white')
         tiles.append(tile);rows.append(dict(cut_index=cut,side=side,time_ms=ms))
         path.unlink()
-    cols=min(5,len(tiles));sheet=Image.new('RGB',(cols*256,((len(tiles)+cols-1)//cols)*192),'black')
-    for i,tile in enumerate(tiles):sheet.paste(tile,((i%cols)*256,(i//cols)*192))
+    cols=min(4,len(tiles));tile_h=th+label_h
+    sheet=Image.new('RGB',(cols*tw,((len(tiles)+cols-1)//cols)*tile_h),'black')
+    for i,tile in enumerate(tiles):sheet.paste(tile,((i%cols)*tw,(i//cols)*tile_h))
     sheet.save(output,quality=75)
     atomic_write_json(output.parent/'contact-sheet-index.json',dict(cut_times_ms=cut_times_ms,samples=rows))
     return dict(path=str(output),samples=rows)
