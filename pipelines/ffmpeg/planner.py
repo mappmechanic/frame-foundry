@@ -79,9 +79,66 @@ def _planner_images(ctx, sources, directory):
     return images, provenance
 
 
-def _compact_evidence(ctx, analysis, directory):
-    candidates=analysis.get('candidates')
-    if candidates is None:candidates=extract_candidates(analysis,ctx.episode_dir)
+def _local_candidates(ctx, analysis):
+    # An empty persisted list is not proof that the source has no usable windows.
+    return analysis.get('candidates') or extract_candidates(analysis, ctx.episode_dir)
+
+
+def _visual_only(analysis):
+    # Missing ASR is not inferred from an empty transcript. Explicit fixtures and
+    # genuine words retain the existing speech-safe planning path.
+    return analysis.get('transcription_status') == 'visual_only_unavailable' and not analysis.get('words')
+
+
+def _complete_visual_duration(analysis, intent, response, candidates):
+    """Append unique local footage; never extend a model cut or claim vision review."""
+    if not _visual_only(analysis):
+        return response
+    remaining = intent.target_duration_ms - sum(
+        s['raw_end_ms'] - s['raw_start_ms'] for s in response['segments'])
+    if remaining <= 0:
+        return response
+    result = deepcopy(response)
+    sources = {s['source_id']: s['duration_ms'] for s in analysis['sources']}
+    usable = [c for c in candidates if c.get('source_id') in sources
+              and type(c.get('start_ms')) is int and type(c.get('end_ms')) is int
+              and 0 <= c['start_ms'] < c['end_ms'] <= sources[c['source_id']]]
+    ranked = rank_candidates(usable, analysis['goal'], top_n=len(usable))
+    # Prefer sources not already chosen, then retain the source-diverse ranking.
+    chosen_sources = {s['source_id'] for s in result['segments']}
+    ranked = [c for c in ranked if c['source_id'] not in chosen_sources] + [
+        c for c in ranked if c['source_id'] in chosen_sources]
+    added = 0
+    for candidate in ranked:
+        sid = candidate['source_id']
+        free = [(candidate['start_ms'], candidate['end_ms'])]
+        for segment in result['segments']:
+            if segment['source_id'] != sid:
+                continue
+            a, b = segment['raw_start_ms'], segment['raw_end_ms']
+            free = [(u, v) for lo, hi in free
+                    for u, v in ((lo, min(hi, a)), (max(lo, b), hi)) if u < v]
+        for lo, hi in free:
+            length = min(hi - lo, remaining)
+            if length <= 0:
+                break
+            result['segments'].append(dict(source_id=sid, raw_start_ms=lo,
+                raw_end_ms=lo + length, reason='Deterministic local duration fill from ranked candidate '
+                + str(candidate['candidate_id']) + '; not LLM visual judgment'))
+            remaining -= length
+            added += length
+        if remaining <= 0:
+            break
+    if added:
+        result['assumptions'].append(
+            f'Deterministic local visual-only duration completion added {added}ms; '
+            'may use candidates beyond the top-eight model evidence; appended footage '
+            'was not inspected by the LLM and is not semantic visual judgment. No ASR inferred.')
+    return result
+
+
+def _compact_evidence(ctx, analysis, directory, candidates=None):
+    if candidates is None:candidates=_local_candidates(ctx, analysis)
     top=rank_candidates(candidates,ctx.goal,top_n=8)
     rows=[];tiles=[]
     for c in top:
@@ -250,16 +307,17 @@ def plan_teaser(ctx: EpisodeContext, analysis: dict, *, provider=_DEFAULT_PROVID
         except ProviderError:
             provider, cause = None, 'Provider configuration failed'
     spec = None
+    candidates = _local_candidates(ctx, analysis) if _visual_only(analysis) else None
     if provider is not None:
         try:
             with tempfile.TemporaryDirectory(prefix='planner-') as directory:
-                rows, images = _compact_evidence(ctx,analysis,directory)
+                rows, images = _compact_evidence(ctx,analysis,directory,candidates)
                 payload = dict(goal=ctx.goal, constraints=dict(target_duration_ms=intent.target_duration_ms, aspect_ratio=intent.aspect_ratio),
                     candidates=rows,response_schema=_RESPONSE_SCHEMA)
                 if retry_fix is not None:payload['fix_instruction']=str(retry_fix)[:160]
                 # Cache only validated source-backed decisions, never media or credentials.
                 from .evaluator import footage_fingerprint
-                identity=dict(footage=footage_fingerprint(analysis['sources']),goal=ctx.goal,provider=getattr(provider,'provider',None),model=getattr(provider,'model',None),protocol='compact-planner-1',candidates=rows,fix=retry_fix)
+                identity=dict(footage=footage_fingerprint(analysis['sources']),goal=ctx.goal,provider=getattr(provider,'provider',None),model=getattr(provider,'model',None),protocol='compact-planner-2',transcription_status=analysis.get('transcription_status'),candidates=rows,fix=retry_fix)
                 key=hashlib.sha256(json.dumps(identity,sort_keys=True).encode()).hexdigest()
                 cache=Path(os.environ.get('FRAMEFOUNDRY_CACHE_DIR',str(Path(__file__).resolve().parents[2]/'.inference-cache')))/'planner'/f'{key}.json'
                 data=None
@@ -278,7 +336,11 @@ def plan_teaser(ctx: EpisodeContext, analysis: dict, *, provider=_DEFAULT_PROVID
                         role='planner',episode_dir=ctx.episode_dir,max_output_tokens=1024)
                     data=response.data
                     _check_candidate_mapping(data,rows)
-                spec = _reconstruct(ctx, analysis, intent, data, 'llm')
+                # Validate the original decision before completing it, so invalid
+                # overlap/bounds cannot be hidden by the duration helper.
+                _reconstruct(ctx, analysis, intent, data, 'llm')
+                completed = _complete_visual_duration(analysis, intent, data, candidates or [])
+                spec = _reconstruct(ctx, analysis, intent, completed, 'llm')
                 if not hit and identity['footage']:
                     atomic_write_json(cache,dict(key=key,data=data,historical_usage=getattr(response,'usage',{})))
                 if hit:spec['assumptions'].append('Validated Planner cache hit; historical inference not charged again')
@@ -290,7 +352,15 @@ def plan_teaser(ctx: EpisodeContext, analysis: dict, *, provider=_DEFAULT_PROVID
         except (ValueError, TypeError, KeyError, StageError, OSError, ValidationError):
             cause = 'Invalid or unusable AI response/evidence'
     if spec is None:
-        spec = _reconstruct(ctx, analysis, intent, _fallback(analysis, intent, cause), 'deterministic')
+        fallback_analysis = analysis
+        if _visual_only(analysis) and not analysis.get('scenes'):
+            # Extraction can derive bounded windows directly from source duration
+            # even when no scenes or persisted candidates were available.
+            fallback_analysis = dict(analysis, scenes=[dict(source_id=c['source_id'],
+                start_ms=c['start_ms'], end_ms=c['end_ms']) for c in candidates])
+        data = _fallback(fallback_analysis, intent, cause)
+        data = _complete_visual_duration(analysis, intent, data, candidates or [])
+        spec = _reconstruct(ctx, analysis, intent, data, 'deterministic')
     validate_narrative(spec, analysis)
     atomic_write_json(Path(ctx.episode_dir) / 'narrative-spec.json', spec)
     return spec
