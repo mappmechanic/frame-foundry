@@ -14,7 +14,10 @@ from .demo_scoreboard import _qa_pass, validated_reports
 from .evaluator import sha256_file
 from .factory_history import collect_factory_history
 
-TREND_EPISODES = ('az-0500', 'az-0550', 'az-0600', 'az-0700', 'az-0810', 'az-0835')
+TREND_EPISODES = ('az-0500', 'az-0550', 'az-0600', 'az-0700', 'az-0810', 'az-0835', 'az-0900')
+
+
+DEMO_EPISODES=('az-0700','az-0810','az-0835','az-0900')
 
 
 def _escape(value):
@@ -76,8 +79,11 @@ def episode_metrics(reports, *, episodes_root, unreadable_lines=0):
                          known_usd=cost.get('known_usd', usd),
                          cost_status='unknown/incomplete' if usd is None else cost['status'],
                          qpd=scores['Q'] / usd if scores['Q'] is not None and usd is not None and usd > 0 else None,
-                         wall=report['timing']['elapsed_seconds'], gates=report['gates']['passed'],
+                         wall=report['timing']['elapsed_seconds'], first_try=report['first_try_passed'], gates=report['gates']['passed'],
                          qa=qa, shipped=_shipped(report, episodes_root, qa)))
+    first_known=sum(type(r['first_try']) is bool for r in rows)
+    first_passed=sum(r['first_try'] is True for r in rows)
+    walls=[r['wall'] for r in rows if r['wall'] is not None]
     qa_known = sum(r['qa'] is not None for r in rows)
     qa_passed = sum(r['qa'] is True for r in rows)
     shipped = sum(bool(r['shipped']) for r in rows)
@@ -86,7 +92,7 @@ def episode_metrics(reports, *, episodes_root, unreadable_lines=0):
     # usd is the total when available; known_usd only fills incomplete snapshots.
     cohort_subtotal = math.fsum(r['usd'] if r['usd'] is not None else (r['known_usd'] or 0) for r in rows)
     complete = bool(rows) and cost_known == len(rows)
-    return dict(rows=rows, valid_lines=len(valid), rejected_lines=invalid + unreadable_lines,
+    return dict(rows=rows, first_known=first_known,first_passed=first_passed,pipeline_median=statistics.median(walls) if walls else None,valid_lines=len(valid), rejected_lines=invalid + unreadable_lines,
                 qa_known=qa_known, qa_passed=qa_passed, shipped=shipped, cost_known=cost_known,
                 known_subtotal=known_subtotal, known_missing=sum(r['known_usd'] is None for r in rows),
                 cohort_subtotal=cohort_subtotal, cost_complete=complete,
@@ -164,26 +170,55 @@ def _factory_section(factory):
     return ''.join(out)
 
 
+def _judge_trend(rows):
+    by_id={r['episode_id']:r for r in rows if r['label']!='[unsafe-id]'}
+    svg=['<svg viewBox="0 0 720 215" role="img" aria-labelledby="jq-title jq-desc">',
+         '<title id="jq-title">Judge J and quality Q: az-0700 to az-0900</title>',
+         '<desc id="jq-desc">Q is solid teal; judge J is dashed slate. Missing scores break each series independently, never zero.</desc>']
+    for value in (0,.5,1):
+        y=155-value*120
+        svg.append(f'<path class="grid" d="M60 {y}H670"/><text x="20" y="{y+5}">{value:g}</text>')
+    for key in ('Q','J'):
+        previous=None
+        for index,eid in enumerate(DEMO_EPISODES):
+            x=100+index*(520/(len(DEMO_EPISODES)-1))
+            score=by_id.get(eid,{}).get('scores',{}).get(key)
+            if score is None:previous=None;continue
+            y=155-score*120
+            if previous:svg.append(f'<path class="jq-line {key}" d="M{previous[0]} {previous[1]}L{x} {y}"/>')
+            svg.append(f'<circle class="jq-point {key}" cx="{x}" cy="{y}" r="4"/>')
+            previous=(x,y)
+    for index,eid in enumerate(DEMO_EPISODES):
+        svg.append(f'<text x="{100+index*(520/(len(DEMO_EPISODES)-1))}" y="190" text-anchor="middle">{eid}</text>')
+    svg.append('</svg>')
+    return ''.join(svg)
+
+
 def _presenter(metrics, factory):
-    rows=metrics['rows']
-    by_id={r['episode_id']:r for r in rows}
-    trend=[(eid,by_id[eid]['scores']['Q'] if eid in by_id else None) for eid in TREND_EPISODES]
-    latest=next(((eid,q) for eid,q in reversed(trend) if q is not None),(None,None))
-    timings=[wo['coverage_minutes'] for wo in factory['work_orders'] if wo.get('coverage_minutes') is not None]
-    rate=f"{100*metrics['qa_passed']/metrics['qa_known']:.1f}%" if metrics['qa_known'] else 'N/A'
-    cost=_number(metrics['cost_per_shipped'],4)
+    rows=metrics['rows'];by_id={r['episode_id']:r for r in rows}
+    latest=next((by_id[eid] for eid in reversed(DEMO_EPISODES) if eid in by_id),None)
+    scores=latest['scores'] if latest else {}
+    first_rate=f"{100*metrics['first_passed']/metrics['first_known']:.1f}%" if metrics['first_known'] else 'N/A'
     cost_label='estimated' if metrics['estimated'] else 'recorded'
     if not metrics['cost_complete']:cost_label='known subtotal · incomplete'
-    cards=[('Latest Q',_number(latest[1]),latest[0] or 'No Q available'),
-           ('AI cost / shipped',cost+' USD',cost_label+' · failed episodes included'),
-           ('Render QA pass rate',rate,f"{metrics['qa_passed']}/{metrics['qa_known']} known episodes"),
-           ('Ticket → PR',_number(statistics.median(timings),1)+' min' if timings else 'N/A','median first title coverage · not completion'),
+    cards=[('Latest J / Q',_number(scores.get('J'))+' / '+_number(scores.get('Q')),latest['episode_id'] if latest else 'No demo evaluation'),
+           ('Quality per $',_number(latest['qpd'],1) if latest else 'N/A','Latest Q / total AI USD · N/A if total incomplete or zero'),
+           ('AI cost / shipped',_number(metrics['cost_per_shipped'],4)+' USD',cost_label+' · all latest episodes; failed overhead included'),
+           ('First-try pass rate',first_rate,f"{metrics['first_passed']}/{metrics['first_known']} recorded first tries · {len(rows)-metrics['first_known']} unknown"),
+           ('Ticket → clip','N/A','No recorded ticket-to-Episode delivery mapping; not Ticket → PR'),
+           ('Pipeline → clip','N/A' if metrics['pipeline_median'] is None else _number(metrics['pipeline_median'],1)+' s','Median recorded pipeline elapsed · proxy, excludes ticket wait and engineer labor'),
            ('Episodes shipped',str(metrics['shipped']),'verified local exports')]
+    trend_rows=[]
+    for eid in DEMO_EPISODES:
+        row=by_id.get(eid);s=row['scores'] if row else {}
+        first='N/A' if row is None or row['first_try'] is None else 'PASS' if row['first_try'] else 'FAIL'
+        trend_rows.append((eid,_number(s.get('J')),_number(s.get('Q')),_number(row['qpd'],1) if row else 'N/A',first,
+                           _number(row['wall'],1)+' s' if row and row['wall'] is not None else 'N/A'))
     return ('<section id="presenter"><h2>Presenter view</h2><div class="cards">'+
             ''.join('<div class="card"><span class="eyebrow">'+_escape(label)+'</span><div class="value">'+_escape(value)+'</div><p class="note">'+_escape(note)+'</p></div>' for label,value,note in cards)+
-            '</div><p class="q-trend"><strong>Q trend</strong> '+
-            ' → '.join(_escape(eid)+': <strong>'+_number(q)+'</strong>' for eid,q in trend)+
-            '</p></section>')
+            '</div><h3>Judge J / Q trend</h3><p class="note">Q — solid teal · J — dashed slate. Latest evaluation per Episode; missing values are gaps.</p>'+
+            _judge_trend(rows)+_table(['Episode','Judge J','Quality Q','Quality / $','First try','Pipeline elapsed'],trend_rows)+
+            '<p class="note">First-try flags come from evaluation.first_try_passed, not final QA. Ticket-to-clip is not measured; pipeline elapsed is a separate machine-time proxy. Shipment requires current QA, gates and matching export hash.</p></section>')
 
 
 def render_html(reports, *, episodes_root, unreadable_lines=0, input_unavailable=False,
@@ -207,6 +242,7 @@ def render_html(reports, *, episodes_root, unreadable_lines=0, input_unavailable
            'th,td{text-align:left;padding:12px 14px;border-bottom:1px solid #e5e5e5;white-space:nowrap}'
            'th{font-size:12px;color:#555}a{color:#245f85}svg{display:block;width:100%;max-width:780px;margin:24px 0}'
            'svg text{font:13px system-ui,sans-serif;fill:#555}.grid{stroke:#ddd;fill:none}.trend{stroke:#245f85;stroke-width:2;fill:none}.point{fill:#245f85}'
+           '.jq-line{fill:none;stroke-width:2}.jq-line.Q{stroke:#245f85}.jq-line.J{stroke:#667085;stroke-dasharray:7 5}.jq-point.Q{fill:#245f85}.jq-point.J{fill:#667085}'
            '.cards{display:flex;gap:24px;flex-wrap:wrap}.card{flex:1;min-width:220px;padding:20px;background:white;border:1px solid #ddd}'
            '.value{font-size:38px;font-weight:600;color:#245f85}.eyebrow{color:#555;font-size:12px;letter-spacing:.08em;text-transform:uppercase}'
            '</style></head><body><main><p class="eyebrow">FrameFoundry · generation-time snapshot</p>',

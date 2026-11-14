@@ -336,7 +336,8 @@ def test_presenter_is_first_with_scoped_numbers_and_collapsed_audit(report,tmp_p
     assert '<summary>Detailed metrics, methods &amp; disclosures</summary>' in out
     assert '<details open' not in out
     assert '0.825' in out and '0.0380 USD' in out and '100.0%' in out
-    assert 'median first title coverage' in out and 'not completion' in out
+    assert 'Ticket → clip' in out and 'No recorded ticket-to-Episode delivery mapping' in out
+    assert 'Pipeline → clip' in out and 'not completion' in out
     assert 'Episodes shipped' in out and 'verified local exports' in out
 
 
@@ -360,3 +361,39 @@ def test_presenter_includes_three_latest_mac_checks_from_local_reports(report,tm
     assert '<td>az-0810</td><td>N/A</td>' in missing
     assert '<td>az-0835</td><td>N/A</td>' in missing
     assert '0.808' not in missing
+
+
+def test_demo_presenter_jq_quality_cost_first_try_and_timing_are_distinct(report,tmp_path):
+    first=report('az-0700',q=.825,usd=.038);last=report('az-0900',q=.808,usd=.0235)
+    retry=report('az-0810',q=.756,usd=.035);retry['first_try_passed']=False
+    missing=report('az-0835',q=.808,usd=None);missing['first_try_passed']=None
+    for r in (first,last,retry,missing):artifact(tmp_path,r['episode_id'])
+    records=[first,retry,missing,last]
+    m=episode_metrics(records,episodes_root=tmp_path)
+    assert (m['first_passed'],m['first_known'])==(2,3)
+    assert m['pipeline_median']==12
+    out=render_html(records,episodes_root=tmp_path);presenter=out.split('<details>')[0]
+    assert '66.7%' in presenter and '34.4' in presenter
+    assert 'Ticket → clip' in presenter and 'No recorded ticket-to-Episode delivery mapping' in presenter
+    assert 'Pipeline → clip' in presenter and '12.0 s' in presenter
+    assert 'known subtotal · incomplete' in presenter
+    assert 'Judge J / Q trend' in presenter and 'az-0900' in presenter
+    assert 'median first title coverage' not in presenter
+    assert '0.808' in presenter and '0.0235' not in presenter  # cost card is cohort cost, not silently latest cost.
+
+
+def test_demo_missing_latest_quality_is_not_hidden_by_previous_success(report,tmp_path):
+    older=report('az-0835',q=.808,usd=.0235)
+    latest=report('az-0900',q=None,usd=0)
+    out=render_html([older,latest],episodes_root=tmp_path).split('<details>')[0]
+    assert 'Latest J / Q' in out and 'N/A / N/A' in out
+    assert 'Quality per $' in out and 'az-0900' in out
+
+
+def test_demo_jq_plot_missing_scores_break_series_independently(report,tmp_path):
+    from pipelines.ffmpeg.scoreboard_html import _judge_trend
+    records=[report('az-0700',q=.825),report('az-0810',q=None),report('az-0835',q=.808),report('az-0900',q=.808)]
+    rows=episode_metrics(records,episodes_root=tmp_path)['rows']
+    out=_judge_trend(rows)
+    assert out.count('class="jq-line Q"')==1 and 'class="jq-line J"' not in out
+    assert out.count('class="jq-point Q"')==3

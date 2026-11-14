@@ -547,3 +547,37 @@ your Mac uses different storage paths, pass those via `--episodes-root` and
 `--evals-root`; do not rerun paid processing just to populate the presentation.
 Successful `work/` media cleanup and the 1 GB disk admission floor remain enabled.
 Campaign work remains deferred.
+
+
+### Demo polish after az-0900
+
+New `subjects-v4` intros are warm and brief: “Come explore the market with us!”
+Two distinctive subjects are named only when both have retained frame evidence.
+Arizona is not inferred from a filename or Goal: the closed place support requires
+a retained positive ASR assertion (“we're in Arizona”, “we are in Arizona”, or
+“welcome to Arizona”), with contiguous source word timestamps inside a selected
+non-screen interval. Conditional/negated/quoted contexts are conservatively omitted.
+The proof is persisted and rechecked against the transcript before narration and
+by evaluation. This is a recorded spoken location claim, not independent GPS verification.
+No extra ASR/LLM/place-extraction call is made. Unsupported/absent places are omitted.
+
+Actual saved narration is measured below 3s (maximum 2,990ms). A slightly long
+response can be pitch-preserving time-stretched as a whole, at most 1.35×, toward
+2.9s. It is never trimmed to fit. If it cannot fit gently, delivery fails explicitly;
+there is no hidden paid TTS retry. The normalized audio hash binds the ledger,
+cache and OTIO; old v1/v2/v3 intros retain their original timing/text verifiers.
+
+The first presenter screen shows latest J/Q, Q per total AI USD, cohort AI cost per
+verified shipped clip (including failed-run overhead), true recorded first-try pass
+rate, verified shipment count and visible J/Q trend az-0700→az-0810→az-0835→az-0900.
+Latest per-Episode cumulative costs are used once; missing/zero/incomplete total
+cost never creates a fake efficiency value. A missing score breaks that series.
+Final render QA is separate from first-try flags and remains in the collapsed audit.
+
+**Ticket-to-clip is N/A:** no durable ticket↔Episode delivery association is currently
+recorded. Ticket→PR coverage is not clip completion. Median pipeline elapsed seconds
+is displayed separately as a machine-time proxy, not ticket latency or engineer labor.
+All values come from local evaluation records/artifacts; Mac reports are not fabricated.
+Use the `make ui` command above; scoreboard/export are read-only and make no paid calls.
+Successful work-media cleanup, disk admission, budget caps and the recovered selection
+baseline remain; no Campaign changes were made.
