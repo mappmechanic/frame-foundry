@@ -287,7 +287,8 @@
               "planner",
               "judge",
               "transcription",
-              "tts"
+              "tts",
+              "decider"
             ]
           },
           "provider": {
@@ -339,6 +340,57 @@
               "string",
               "null"
             ]
+          },
+          "decision_stage": {
+            "enum": [
+              "selection",
+              "recovery"
+            ]
+          },
+          "requested_mode": {
+            "enum": [
+              "llm",
+              "decisions",
+              "heuristic"
+            ]
+          },
+          "effective_mode": {
+            "enum": [
+              "llm",
+              "decisions",
+              "heuristic"
+            ]
+          },
+          "fallback_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "prompt_cache_key": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "latency_seconds": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "cached_input_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "cache_write_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
           }
         },
         "required": [

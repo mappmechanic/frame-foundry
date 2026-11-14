@@ -35,7 +35,7 @@ CHECK_NAMES = ['artifacts_present', 'artifact_schemas', 'timeline_sources', 'rea
 # Known JSON artifacts and their contracts; anything else is declared, not inferred.
 KNOWN_SCHEMAS = {'narrative-spec.json':'narrative-spec.schema.json','qa-report.json':'qa-report.schema.json','eval-report.json':'eval-report.schema.json',
     'analysis.json':'internal:analysis','transcript.json':'internal:transcript','state.json':'internal:state','proxy-map.json':'internal:proxy_map',
-    'work-cleanup.json':'internal:work_cleanup','contact-sheet-index.json':'internal:contact_sheet_index','llm-usage.json':'internal:llm_usage','tts-usage.json':'internal:tts_usage','eval-judge-guard.json':'internal:eval_judge_guard'}
+    'decisions-report.json':'internal:decisions_report','work-cleanup.json':'internal:work_cleanup','contact-sheet-index.json':'internal:contact_sheet_index','llm-usage.json':'internal:llm_usage','tts-usage.json':'internal:tts_usage','eval-judge-guard.json':'internal:eval_judge_guard'}
 UNSCHEMATIZED = []
 _TIMEOUT = 900
 
