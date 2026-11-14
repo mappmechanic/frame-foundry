@@ -60,3 +60,11 @@ def test_setup_prefers_demo_uv_path_and_pins_python(tmp_path):
     override = subprocess.run(['make', '-n', 'setup', 'UV=/custom/uv'], cwd=ROOT,
                               capture_output=True, text=True, check=True)
     assert '"/custom/uv" venv -p 3.13' in override.stdout
+
+    default = subprocess.run(['make', '-n'], cwd=ROOT,
+                             capture_output=True, text=True, check=True)
+    assert '-m pytest tests -q' in default.stdout
+    assert 'venv -p' not in default.stdout  # plain make must not clear the venv
+    fallback = subprocess.run(['make', '-n', 'setup', f'HOME={tmp_path / "no-uv-home"}'],
+                              cwd=ROOT, capture_output=True, text=True, check=True)
+    assert '"uv" venv -p 3.13' in fallback.stdout

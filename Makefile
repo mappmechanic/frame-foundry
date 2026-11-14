@@ -1,3 +1,4 @@
+.DEFAULT_GOAL := test
 VENV ?= .venv
 PYTHON ?= $(VENV)/bin/python
 UV ?= $(if $(wildcard $(HOME)/.local/bin/uv),$(HOME)/.local/bin/uv,uv)
