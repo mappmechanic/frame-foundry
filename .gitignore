@@ -1,0 +1,43 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+*.mp4
+*.mov
+*.MOV
+*.wav
+*.mkv
+.env
+.ai-project*
+episodes/
+
+*.zip
+*.mp3
+evals/scoreboard.jsonl
+evals/human-ratings.jsonl
+evals/results/
+.inference-cache/
+*.egg-info/
+build/
+dist/
+
+evals/.inference-cache/
+evals/pairwise/
+evals/pairwise.jsonl
+evals/.*.lock
+
+# Static demo export: public family media/data are generated on the deploying Mac.
+site/public/
+site/.export.lock
+site/.public-stage-*/
+site/.public-backup/
+site/.encode-*/
+site/.vercel/
+
+# WO-17: upstream inspection only; never ship vendor prompts, media or fonts.
+/_vendor_skills/
+# Private memory and controlled learning experiments (including frozen seeds)
+evals/learning-curves/
+
+# Private policy experiments
+evals/policy-comparisons/

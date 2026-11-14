@@ -1,0 +1,137 @@
+{
+  "schema_version": "1.0",
+  "description": "Golden set. No media is stored in Git. Synthetic cases are generated offline with FFmpeg; the external Arizona release is an explicit opt-in download (private release, never fetched automatically, never in public-PR CI).",
+  "external_assets": [
+    {
+      "id": "arizona-480p",
+      "repo": "mappmechanic/frame-foundry",
+      "release_tag": "sample-data-arizona-480p",
+      "file": "ff-arizona-480p.zip",
+      "archive_subdir": "ff-samples",
+      "expected_clips": 26,
+      "access": "private release; requires gh authentication; opt-in with --download"
+    }
+  ],
+  "cases": [
+    {
+      "id": "synthetic-vertical-30s",
+      "kind": "synthetic",
+      "goal": "Create a 30 second vertical teaser from this family-trip footage",
+      "synthetic": {
+        "clip_seconds": 12,
+        "note": "3 distinct sources x 12 s = 36 s, enough to cover the 30 s target"
+      },
+      "labels": {
+        "labels": [
+          {
+            "filename": "01-trip.mp4",
+            "start_ms": 1000,
+            "end_ms": 3000
+          }
+        ]
+      },
+      "expected": {
+        "gates_passed": true,
+        "qa_result_in": [
+          "passed",
+          "partial"
+        ]
+      }
+    },
+    {
+      "id": "synthetic-horizontal-60s",
+      "kind": "synthetic",
+      "goal": "Create a 60 second horizontal teaser from this family-trip footage",
+      "synthetic": {
+        "clip_seconds": 24,
+        "note": "3 distinct sources x 24 s = 72 s, enough to cover the 60 s target"
+      },
+      "labels": {
+        "labels": [
+          {
+            "filename": "02-trip.mp4",
+            "start_ms": 2000,
+            "end_ms": 6000
+          }
+        ]
+      },
+      "expected": {
+        "gates_passed": true,
+        "qa_result_in": [
+          "passed",
+          "partial"
+        ]
+      }
+    },
+    {
+      "id": "arizona-vertical-30s",
+      "kind": "external",
+      "asset": "arizona-480p",
+      "goal": "Create a 30 second vertical teaser from this raw family-trip footage that highlights the important moments of the trip",
+      "labels": null,
+      "expected": {
+        "gates_passed": true,
+        "qa_result_in": [
+          "passed",
+          "partial"
+        ]
+      }
+    },
+    {
+      "id": "arizona-horizontal-60s",
+      "kind": "external",
+      "asset": "arizona-480p",
+      "goal": "Create a 60 second horizontal teaser from this raw family-trip footage that highlights the important moments of the trip",
+      "labels": null,
+      "expected": {
+        "gates_passed": true,
+        "qa_result_in": [
+          "passed",
+          "partial"
+        ]
+      }
+    },
+    {
+      "id": "arizona-kids-only",
+      "kind": "external",
+      "asset": "arizona-480p",
+      "goal": "Create a 30 second vertical teaser showing only the kids during the trip",
+      "labels": null,
+      "expected": {
+        "gates_passed": true,
+        "qa_result_in": [
+          "passed",
+          "partial"
+        ]
+      }
+    },
+    {
+      "id": "arizona-landscapes-only",
+      "kind": "external",
+      "asset": "arizona-480p",
+      "goal": "Create a 30 second vertical teaser showing only landscapes from this Arizona trip",
+      "labels": null,
+      "expected": {
+        "gates_passed": true,
+        "qa_result_in": [
+          "passed",
+          "partial"
+        ]
+      }
+    },
+    {
+      "id": "arizona-impossible-beach-sunset-desert",
+      "kind": "external",
+      "asset": "arizona-480p",
+      "goal": "Create a teaser of a beach sunset in the desert",
+      "labels": null,
+      "expected": {
+        "gates_passed": true,
+        "qa_result_in": [
+          "partial"
+        ],
+        "unsupported_goal": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+# Use a deployment-specific ignore list, NOT Git's media/generated-output exclusions.
+.git/
+.vercel/
+node_modules/
+.export.lock
+.public-stage-*/
+.public-backup/
+.encode-*/

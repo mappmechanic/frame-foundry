@@ -1,0 +1,796 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://framefoundry.local/contracts/eval-report.schema.json",
+  "title": "FrameFoundry EvalReport 1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "evaluation_id",
+    "episode_id",
+    "goal",
+    "created_at",
+    "render_hash",
+    "footage_hash",
+    "gates",
+    "scores",
+    "judge",
+    "model_cost",
+    "tokens",
+    "timing",
+    "provenance",
+    "first_try_passed",
+    "limitations",
+    "budget"
+  ],
+  "$defs": {
+    "unit": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "usd": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "sha": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "strings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "criteria_scores": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "goal_fit",
+        "moment_importance",
+        "story_arc",
+        "variety",
+        "opening",
+        "ending"
+      ],
+      "properties": {
+        "goal_fit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "moment_importance": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "story_arc": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "variety": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "opening": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "ending": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        }
+      }
+    },
+    "criteria_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "goal_fit",
+        "moment_importance",
+        "story_arc",
+        "variety",
+        "opening",
+        "ending"
+      ],
+      "properties": {
+        "goal_fit": {
+          "$ref": "#/$defs/shot_ids"
+        },
+        "moment_importance": {
+          "$ref": "#/$defs/shot_ids"
+        },
+        "story_arc": {
+          "$ref": "#/$defs/shot_ids"
+        },
+        "variety": {
+          "$ref": "#/$defs/shot_ids"
+        },
+        "opening": {
+          "$ref": "#/$defs/shot_ids"
+        },
+        "ending": {
+          "$ref": "#/$defs/shot_ids"
+        }
+      }
+    },
+    "shot_ids": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "pattern": "^shot-[0-9]{2,}$"
+      }
+    },
+    "component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "available",
+        "score",
+        "method",
+        "normalizer",
+        "raw",
+        "reason"
+      ],
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "score": {
+          "$ref": "#/$defs/unit"
+        },
+        "method": {
+          "type": "string"
+        },
+        "normalizer": {
+          "type": "string"
+        },
+        "raw": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    }
+  },
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "evaluation_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$"
+    },
+    "episode_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "goal": {
+      "type": "string"
+    },
+    "created_at": {
+      "type": "string",
+      "minLength": 20
+    },
+    "render_hash": {
+      "$ref": "#/$defs/sha"
+    },
+    "footage_hash": {
+      "$ref": "#/$defs/sha"
+    },
+    "gates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "passed",
+        "checks",
+        "version",
+        "thresholds"
+      ],
+      "properties": {
+        "passed": {
+          "type": "boolean"
+        },
+        "version": {
+          "type": "string"
+        },
+        "thresholds": {
+          "type": "object"
+        },
+        "checks": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "status",
+              "reason"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "pass",
+                  "fail",
+                  "not_run"
+                ]
+              },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "measurement": {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "scores": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "G",
+        "D",
+        "J",
+        "H",
+        "Q",
+        "weights",
+        "Q_status",
+        "D_components",
+        "H_detail",
+        "method_version"
+      ],
+      "properties": {
+        "G": {
+          "enum": [
+            0,
+            1
+          ]
+        },
+        "D": {
+          "$ref": "#/$defs/unit"
+        },
+        "J": {
+          "$ref": "#/$defs/unit"
+        },
+        "H": {
+          "$ref": "#/$defs/unit"
+        },
+        "Q": {
+          "$ref": "#/$defs/unit"
+        },
+        "weights": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "J",
+            "D",
+            "H"
+          ],
+          "properties": {
+            "J": {
+              "type": "number"
+            },
+            "D": {
+              "type": "number"
+            },
+            "H": {
+              "type": "number"
+            }
+          }
+        },
+        "Q_status": {
+          "enum": [
+            "computed",
+            "forced_zero_gate_failed",
+            "unavailable"
+          ]
+        },
+        "method_version": {
+          "type": "string"
+        },
+        "D_components": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/component"
+          }
+        },
+        "H_detail": {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      }
+    },
+    "judge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "scores",
+        "evidence",
+        "weakest_shot",
+        "fix_instruction",
+        "verdict",
+        "unsupported_goal",
+        "limitations",
+        "cache_hit",
+        "reason",
+        "provider",
+        "model",
+        "prompt_version"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "scored",
+            "unavailable",
+            "failed"
+          ]
+        },
+        "scores": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/criteria_scores"
+            }
+          ]
+        },
+        "evidence": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/criteria_evidence"
+            }
+          ]
+        },
+        "weakest_shot": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fix_instruction": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 160
+        },
+        "verdict": {
+          "enum": [
+            "pass",
+            "fail",
+            null
+          ]
+        },
+        "unsupported_goal": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "limitations": {
+          "$ref": "#/$defs/strings"
+        },
+        "cache_hit": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "prompt_version": {
+          "type": "string"
+        },
+        "historical_usage": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "overlay_fit": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "evidence",
+            "reason"
+          ],
+          "properties": {
+            "status": {
+              "enum": [
+                "pass",
+                "fail",
+                "unavailable"
+              ]
+            },
+            "evidence": {
+              "type": "array",
+              "maxItems": 40,
+              "items": {
+                "type": "string",
+                "pattern": "^shot-[0-9]{2,6}$"
+              }
+            },
+            "reason": {
+              "type": "string",
+              "maxLength": 200
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "scored"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "scores": {
+                "type": "object"
+              },
+              "evidence": {
+                "type": "object"
+              },
+              "weakest_shot": {
+                "type": "string"
+              },
+              "fix_instruction": {
+                "type": "string"
+              },
+              "verdict": {
+                "enum": [
+                  "pass",
+                  "fail"
+                ]
+              },
+              "unsupported_goal": {
+                "type": "boolean"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "scores": {
+                "type": "null"
+              },
+              "verdict": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "model_cost": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "usd",
+        "status",
+        "known_usd",
+        "llm_usd",
+        "tts_usd",
+        "quality_per_dollar",
+        "notes"
+      ],
+      "properties": {
+        "usd": {
+          "$ref": "#/$defs/usd"
+        },
+        "status": {
+          "enum": [
+            "measured",
+            "estimated",
+            "unknown"
+          ]
+        },
+        "known_usd": {
+          "type": "number",
+          "minimum": 0
+        },
+        "llm_usd": {
+          "$ref": "#/$defs/usd"
+        },
+        "tts_usd": {
+          "$ref": "#/$defs/usd"
+        },
+        "quality_per_dollar": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "notes": {
+          "$ref": "#/$defs/strings"
+        },
+        "asr_usd": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        }
+      }
+    },
+    "tokens": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "input",
+        "output",
+        "complete"
+      ],
+      "properties": {
+        "input": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "output": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "complete": {
+          "type": "boolean"
+        }
+      }
+    },
+    "timing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "elapsed_seconds",
+        "footage_seconds",
+        "evaluation_seconds"
+      ],
+      "properties": {
+        "elapsed_seconds": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "footage_seconds": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "evaluation_seconds": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "branch",
+        "commit",
+        "pr",
+        "fixture_mode",
+        "transcription_status",
+        "evaluator_version"
+      ],
+      "properties": {
+        "branch": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "commit": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pr": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fixture_mode": {
+          "type": "boolean"
+        },
+        "transcription_status": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "evaluator_version": {
+          "type": "string"
+        }
+      }
+    },
+    "first_try_passed": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "limitations": {
+      "$ref": "#/$defs/strings"
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "api_limit_usd",
+        "token_limit",
+        "accounted_llm_usd",
+        "accounted_tokens",
+        "unknown_usage_reservations",
+        "blocked_calls",
+        "reason"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "ok",
+            "overrun",
+            "unavailable"
+          ]
+        },
+        "api_limit_usd": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "token_limit": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "accounted_llm_usd": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "accounted_tokens": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "unknown_usage_reservations": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "blocked_calls": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "memory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "backend",
+        "status",
+        "lessons_used",
+        "limitations"
+      ],
+      "properties": {
+        "enabled": {
+          "const": true
+        },
+        "backend": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "lessons_used": {
+          "type": "array",
+          "maxItems": 5,
+          "items": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
+        "limitations": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "storage_root": {
+          "type": "string"
+        },
+        "requested_backend": {
+          "enum": [
+            "auto",
+            "local",
+            "hydradb"
+          ]
+        }
+      }
+    }
+  }
+}

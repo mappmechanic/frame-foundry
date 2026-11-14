@@ -1,0 +1,21 @@
+{
+  "version": "goal-overlays-2",
+  "font": "bold sans",
+  "color": "white",
+  "shadow": "black 0.65, 2px offset",
+  "safe_top": 0.12,
+  "safe_bottom": 0.2,
+  "max_lines": 2,
+  "max_chars": 42,
+  "fade_in_ms": 250,
+  "slide_px": 8,
+  "fade_out_ms": 250,
+  "title_hold_ms": 2500,
+  "section_hold_ms": 2500,
+  "minimum_hold_ms": 2500,
+  "cap_height_ratio": 0.06,
+  "qa_min_text_height_ratio": 0.05,
+  "pill_opacity": 0.6,
+  "padding_px": 32,
+  "pill_radius_px": 32
+}

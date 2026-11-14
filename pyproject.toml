@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "framefoundry"
+version = "0.1.0"
+description = "Deterministic footage-to-clip pipeline with bounded editing judgment"
+requires-python = ">=3.10,<3.14"
+dependencies = ["jsonschema==4.25.1", "Pillow==11.3.0", "opentimelineio==0.18.1", "opencv-python-headless==4.12.0.88", "fastapi==0.162.7", "uvicorn==0.54.0", "python-multipart==0.0.33"]
+
+[project.optional-dependencies]
+memory = ["hydradb-sdk>=2.1.7,<3"]
+decisions = ["openai>=3.26.0,<4"]
+test = ["pytest==8.3.5", "httpx==0.28.1"]
+
+[project.scripts]
+framefoundry = "pipelines.ffmpeg.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["pipelines*", "scripts*"]
+
+[tool.setuptools.package-data]
+"pipelines.ffmpeg" = ["local_ui/*.html"]
