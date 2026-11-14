@@ -75,6 +75,7 @@ def test_low_judge_score_flags_partial_but_never_overrides_audio(output_set,monk
     assert not report['passed'] and report['goal_judge']['score'] is None
 
 def test_mocked_agent_run_retains_planner_and_judge_tokens(tmp_path,input_set,monkeypatch):
+    monkeypatch.setenv('FRAMEFOUNDRY_PROJECT_BUDGET_DIR',str(tmp_path/'budget'))
     response_count=[0]
     def transport(url,headers,body,timeout):
         payload=json.loads(body);role='judge' if 'Judge whether' in payload['system'] else 'planner'
@@ -139,3 +140,24 @@ def test_corrupt_usage_preserves_failure_instead_of_fabricated_accounting(tmp_pa
 def test_schema_cannot_pass_with_missing_hard_checks(output_set):
     root,report=output_set;bad=copy.deepcopy(report);bad['checks']=[]
     with pytest.raises(StageError):validate_report(bad)
+
+def test_corrupt_fixture_mapping_fails_before_fake_transcription(input_set,tmp_path):
+    fixture=read_json(input_set/'transcript-fixture.json');fixture['sources'][0]['filename']='wrong.mp4'
+    path=tmp_path/'bad-fixture.json';atomic_write_json(path,fixture)
+    report=run_episode(input_set,'10 second teaser',episodes_root=tmp_path/'episodes',episode_id='badfixture',transcript_fixture=path,provider=None)
+    assert not report['passed'] and report['error']['code']=='FIXTURE_INVALID'
+
+def test_two_repair_attempts_are_bounded(input_set,tmp_path,monkeypatch):
+    from pipelines.ffmpeg import cli
+    original=cli.validate_candidate;counter=[0]
+    def fail_then_pass(*args,**kwargs):
+        report=original(*args,**kwargs);counter[0]+=1
+        if counter[0]<=2:
+            report.update(passed=False,result='failed',output_path=None,error=StageError('QA_FAILED','validator','Injected loudness failure').as_dict(),integrated_lufs=-20)
+            for check in report['checks']:
+                if check['name']=='loudness':check.update(status='fail',reason='Injected loudness failure')
+        return report
+    monkeypatch.setattr(cli,'validate_candidate',fail_then_pass)
+    report=cli.run_episode(input_set,'10 second teaser',episodes_root=tmp_path,episode_id='repair',transcript_fixture=input_set/'transcript-fixture.json',provider=None)
+    assert report['passed'] and len(report['attempts'])==3 and counter[0]==3
+    assert [a['passed'] for a in report['attempts']]==[False,False,True]

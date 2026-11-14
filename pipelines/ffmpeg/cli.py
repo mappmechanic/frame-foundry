@@ -28,7 +28,7 @@ def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixt
                 except ProviderError:active_provider=None
             budget_note=None
             if active_provider is not None:
-                try:reserve_project_episode(root,episode_id)
+                try:reserve_project_episode(Path(os.environ.get('FRAMEFOUNDRY_PROJECT_BUDGET_DIR',str(Path(__file__).resolve().parents[2]))),str(directory))
                 except ProviderError as e:active_provider=None;budget_note=str(e)
             fixture=read_json(transcript_fixture) if transcript_fixture is not None else None
             def fixture_words(source):

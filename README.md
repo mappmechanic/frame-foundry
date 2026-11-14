@@ -64,6 +64,8 @@ Set secrets in workspace/environment settings, never commit them:
 - `FRAMEFOUNDRY_PROJECT_SPENT_USD` supplies initial already-spent budget when the
   project ledger is first created. Assumed initial AI spend is zero if omitted;
   that is **not proof** that labor/infrastructure/earlier project expenses are zero.
+- `FRAMEFOUNDRY_PROJECT_BUDGET_DIR` optionally selects the project's durable ledger
+  directory; by default it is the repository root, shared across Episode roots.
 
 Configured keys enable the default agent: bounded sampled JPEGs and transcript
 excerpts are sent to that provider. Original video is never uploaded. Prompts
@@ -91,8 +93,9 @@ for API-cost-per-finished-clip and retain failures in the numerator.
 A durable project ledger reserves $5 per AI-enabled Episode under a $500 ceiling;
 per-call reservations enforce the same $5 Episode ceiling including failures.
 Reservations conservatively remain allocated; reconcile initial spend manually
-before enabling expensive runs. Changing the Episode root starts a separate
-ledger: keep one project root to avoid splitting budget accounting.
+before enabling expensive runs. Changing the Episode output root does not reset
+the shared project ledger. Do not change the project budget directory to bypass
+existing reservations; it identifies the same durable budget across runs.
 
 Hard gates independently inspect H.264/AAC dimensions/30fps, schema/source/OTIO
 ranges, spoken padding (80ms before, 120ms after), rendered timeline duration,
