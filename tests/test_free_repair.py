@@ -97,3 +97,72 @@ def test_dark_or_low_quality_candidate_is_not_a_free_improvement(tmp_path):
     for c in a['candidates']:c['quality']['exposure']=1
     result,note=free_repair.replace(spec,a,weak)
     assert result==spec and 'left unchanged' in note
+
+
+def test_next_best_safe_window_can_replace_weak_shot_without_higher_motion(tmp_path):
+    spec,a,weak=inputs(tmp_path)
+    for cues in a['visual_cues'].values():
+        for cue in cues:
+            if 'test_mock' in cue['method']:cue['motion']=.16
+    result,note=free_repair.replace(spec,a,weak)
+    assert 'replaced shot-08' in note and result!=spec
+
+
+# Strict synthetic reports bind real fixture bytes and OTIO; not live media QA.
+from tests.test_scoreboard_html import report
+
+
+def prior_episode(tmp_path,spec,a,weak,report,*,eid='az-0835',created='2026-11-14T16:00:00Z'):
+    import json
+    import opentimelineio as otio
+    from pipelines.ffmpeg.evaluator import footage_fingerprint,validate_eval_report
+    from pipelines.ffmpeg.eval_judge import CRITERIA
+    root=tmp_path/'episodes';directory=root/eid;directory.mkdir(parents=True)
+    evaluation=report(eid,created=created)
+    evaluation.update(goal=spec['goal'],footage_hash=footage_fingerprint(a['sources']))
+    evaluation['scores']['J']=.75
+    evaluation['judge'].update(status='scored',scores={c:4 for c in CRITERIA},evidence={c:[weak['shot_id']] for c in CRITERIA},
+        weakest_shot=weak['shot_id'],fix_instruction='Replace weak shot',verdict='pass',unsupported_goal=False)
+    validate_eval_report(evaluation)
+    for name,payload in [('analysis.json',a),('narrative-spec.json',spec),('eval-report.json',evaluation),('qa-report.json',{'passed':True})]:
+        (directory/name).write_text(json.dumps(payload))
+    (directory/'finished.mp4').write_bytes(b'export')
+    timeline,_=build_timeline(spec,a);otio.adapters.write_to_file(timeline,str(directory/'timeline.otio'))
+    return root,directory
+
+
+def test_latest_compatible_judge_is_reused_automatically_without_paid_call(tmp_path,report,monkeypatch):
+    from pipelines.ffmpeg import llm_provider
+    monkeypatch.setattr(llm_provider,'_transport',lambda *a:pytest.fail('No paid call'))
+    spec,a,weak=inputs(tmp_path)
+    root,_=prior_episode(tmp_path,spec,a,weak,report)
+    result=free_repair.repair_latest(spec,a,episodes_root=root)
+    assert result['segments']!=spec['segments']
+    assert 'replaced shot-08' in result['assumptions'][-1]
+
+
+@pytest.mark.parametrize('tamper',['finished.mp4','goal','footage','aspect','duration','directory_identity'])
+def test_automatic_repair_never_uses_stale_or_incompatible_prior(tmp_path,report,tamper):
+    import json
+    spec,a,weak=inputs(tmp_path);root,directory=prior_episode(tmp_path,spec,a,weak,report)
+    if tamper=='finished.mp4':(directory/tamper).write_bytes(b'changed render')
+    elif tamper in ('goal','aspect','duration'):
+        previous=json.loads((directory/'narrative-spec.json').read_text())
+        key={'goal':'goal','aspect':'aspect_ratio','duration':'target_duration_ms'}[tamper]
+        previous[key]={'goal':'Different goal','aspect':'16:9','duration':30000}[tamper]
+        (directory/'narrative-spec.json').write_text(json.dumps(previous))
+    else:
+        evaluation=json.loads((directory/'eval-report.json').read_text())
+        evaluation['footage_hash' if tamper=='footage' else 'episode_id']='c'*64 if tamper=='footage' else 'different'
+        (directory/'eval-report.json').write_text(json.dumps(evaluation))
+    result=free_repair.repair_latest(spec,a,episodes_root=root)
+    assert result['segments']==spec['segments']
+
+
+def test_latest_stale_judgment_does_not_fall_back_to_older_episode(tmp_path,report):
+    spec,a,weak=inputs(tmp_path)
+    root,_=prior_episode(tmp_path,spec,a,weak,report,eid='old',created='2026-11-14T15:00:00Z')
+    _,latest=prior_episode(tmp_path,spec,a,weak,report)
+    (latest/'finished.mp4').write_bytes(b'changed render')
+    result=free_repair.repair_latest(spec,a,episodes_root=root)
+    assert result['segments']==spec['segments'] and 'stale' in result['assumptions'][-1]

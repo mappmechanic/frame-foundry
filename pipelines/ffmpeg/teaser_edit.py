@@ -1,5 +1,6 @@
 """Short, source-backed edits; only cut outside protected speech components."""
 from copy import deepcopy
+from .candidates import sharpness_tiebreak
 import hashlib
 import math
 import re
@@ -235,13 +236,13 @@ def enforce_closing(entries, pool, semantic, blocked):
                        and e[1]['raw_start_ms'] < end for e in entries + trial):
                     continue
                 alternatives.append((c, segment, labels))
-            for replacement in sorted(alternatives, key=lambda e: -score(e[0], e[2])):
+            for replacement in sorted(alternatives, key=lambda e: (-score(e[0], e[2]),-sharpness_tiebreak(e[0]))):
                 proposed = trial[:index] + [replacement] + trial[index+1:]
                 found = _closing_order(proposed, count)
                 if found is not None:
                     return found
             if alternatives:
-                trial[index] = max(alternatives, key=lambda e: score(e[0], e[2]))
+                trial[index] = max(alternatives, key=lambda e: (score(e[0], e[2]),sharpness_tiebreak(e[0])))
                 if sum(closing_qualifies(*e) for e in trial[1:]) >= count:
                     break
     return entries
@@ -280,18 +281,18 @@ def complete(analysis,intent,response,pool):
         model.append((c,s['reason'],labels))
     qualified=[(c,r,l) for c,r,l in model if hook(c,l)]
     if qualified:
-        first=max(qualified,key=lambda item:score(item[0],item[2]));add(*first)
+        first=max(qualified,key=lambda item:(score(item[0],item[2]),sharpness_tiebreak(item[0])));add(*first)
     else:
         alternatives=[c for c in pool if hook(c) and c['candidate_id'] not in blocked]
-        if alternatives:add(max(alternatives,key=score),'Locally enforced people/person or high-motion opening; detector/sparse evidence, not semantic certainty')
+        if alternatives:add(max(alternatives,key=lambda c:(score(c),sharpness_tiebreak(c))),'Locally enforced people/person or high-motion opening; detector/sparse evidence, not semantic certainty')
     for c,reason,labels in model:add(c,reason,labels)
     # Interleave sources so adjacent touching windows cannot coalesce into long shots.
-    pending=sorted([c for c in pool if c['candidate_id'] not in blocked],key=lambda c:(-score(c,semantic.get(c['candidate_id'],[])),c['source_id'],c['start_ms']))
+    pending=sorted([c for c in pool if c['candidate_id'] not in blocked],key=lambda c:(-score(c,semantic.get(c['candidate_id'],[])),-sharpness_tiebreak(c),c['source_id'],c['start_ms']))
     while frames<target_frames and pending:
         seen={e[0]['source_id'] for e in entries};previous=entries[-1][0]['source_id'] if entries else None
         options=[c for c in pending if free(c)]
         if not options:break
-        choices=sorted(options,key=lambda c:(c['source_id']==previous,c['source_id'] in seen,-score(c,semantic.get(c['candidate_id'],[]))))
+        choices=sorted(options,key=lambda c:(c['source_id']==previous,c['source_id'] in seen,-score(c,semantic.get(c['candidate_id'],[])),-sharpness_tiebreak(c)))
         c=choices[0];pending.remove(c)
         add(c,'Deterministic short word-safe duration fill; may be beyond the eight LLM-inspected windows')
     # Preserve model order except the explicit hook; separate adjacent same-source touching cuts.

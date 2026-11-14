@@ -217,3 +217,48 @@ def test_sparse_scene_gaps_overlaps_and_source_clamping(tmp_path):
     result = extract_candidates(dict(sources=[source(duration=10000)], scenes=scenes), tmp_path)
     assert [(c['start_ms'], c['end_ms']) for c in result] == [(0, 2000), (2000, 3000),
                                                           (3000, 5000), (9000, 10000)]
+
+
+def tied_candidate(cid,sharpness,*,visual=50,time=500,in_window=True):
+    return dict(candidate_id=cid,source_id='same',start_ms=0,end_ms=1000,
+                frame_in_window=in_window,quality_frame_time_ms=time,
+                quality=dict(visual_score=visual,sharpness=sharpness))
+
+
+def test_equal_scores_prefer_sharper_measured_window_without_changing_scores():
+    soft=tied_candidate('a',20);sharp=tied_candidate('z',80)
+    before=copy.deepcopy([soft,sharp]);ranked=rank_candidates([soft,sharp],'')
+    assert [c['candidate_id'] for c in ranked]==['z','a']
+    assert ranked[0]['pre_rank']==ranked[1]['pre_rank']
+    assert [soft,sharp]==before
+    assert rank_candidates([sharp,soft],'')==ranked
+    soft['quality']['visual_score']=51
+    assert rank_candidates([sharp,soft],'')[0]['candidate_id']=='a'
+
+
+@pytest.mark.parametrize('sharpness,time,in_window',[(float('nan'),500,True),(float('inf'),500,True),
+    (None,500,True),(True,500,True),('100',500,True),(100,1000,True),(100,None,True),(100,500,False)])
+def test_missing_invalid_or_outside_sharpness_never_wins_a_tie(sharpness,time,in_window):
+    invalid=tied_candidate('z',sharpness,time=time,in_window=in_window)
+    measured=tied_candidate('a',10)
+    assert rank_candidates([invalid,measured],'')[0]['candidate_id']=='a'
+
+
+def test_local_completion_prefers_sharper_equal_score_hook(tmp_path):
+    from pipelines.ffmpeg import teaser_edit
+    from pipelines.ffmpeg.goal_parser import parse_goal
+    from tests.test_grounded_voiceover import framed
+    a=framed(tmp_path)
+    pool=teaser_edit.short_candidates(a,a['candidates'])
+    qualified=[c for c in pool if teaser_edit.hook(c)]
+    assert len(qualified)>1
+    soft,sharp=qualified[:2]
+    # Equal visual/people/motion score; only local measured sharpness differs.
+    sharp['quality']=dict(soft['quality'],sharpness=90)
+    soft['quality']['sharpness']=10
+    for c in pool:
+        if c not in (soft,sharp):c['quality']['visual_score']=-100
+    response=dict(interpretation='Tie fixture',assumptions=[],coverage=dict(status='full',limitations=[]),segments=[])
+    result=teaser_edit.complete(a,parse_goal(a['goal']),response,pool)
+    first=result['segments'][0]
+    assert (first['source_id'],first['raw_start_ms'])==(sharp['source_id'],sharp['start_ms'])

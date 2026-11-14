@@ -87,6 +87,9 @@ def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixt
             if repair_from:
                 from .free_repair import repair_from as reuse_judge
                 spec=reuse_judge(spec,analysis,episodes_root=root,episode_id=repair_from,keep_intro=voiceover)
+            else:
+                from .free_repair import repair_latest
+                spec=repair_latest(spec,analysis,episodes_root=root,keep_intro=voiceover)
             if visual_only:
                 spec['assumptions'].append('Explicit visual-only diagnostic mode: speech not transcribed; word integrity unverified')
                 spec['coverage']['status']='partial'

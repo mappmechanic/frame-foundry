@@ -267,6 +267,16 @@ def extract_candidates(analysis: dict, episode_dir: Path, *, window_ms: int = MA
     return short_candidates(analysis,candidates) if enabled(analysis) else candidates
 
 
+def sharpness_tiebreak(candidate):
+    """Bounded sharpness only from a measured frame inside this candidate window."""
+    time=candidate.get('quality_frame_time_ms',candidate.get('frame_time_ms'))
+    value=candidate.get('quality',{}).get('sharpness')
+    if (not candidate.get('frame_in_window') or isinstance(time,bool)
+        or not isinstance(time,(int,float)) or not candidate['start_ms']<=time<candidate['end_ms']
+        or not isinstance(value,(int,float)) or isinstance(value,bool)):return 0.0
+    return _bounded(value)
+
+
 def rank_candidates(candidates: list[dict], goal: str, *, top_n: int = 8) -> list[dict]:
     """Fixed lexical bonus (0..10), then deterministic source-diverse round robin.
 
@@ -281,7 +291,7 @@ def rank_candidates(candidates: list[dict], goal: str, *, top_n: int = 8) -> lis
         evidence = set(re.findall(r'\w+', candidate.get('transcript_snippet', '').casefold()))
         bonus = min(10, 2 * len(tokens & evidence))
         ranked.append(dict(candidate, pre_rank=round(_bounded(_base_score(candidate) + bonus), 6)))
-    ranked.sort(key=lambda c: (-c['pre_rank'], c['source_id'], c['start_ms'], c['end_ms'], c['candidate_id']))
+    ranked.sort(key=lambda c: (-c['pre_rank'], -sharpness_tiebreak(c), c['source_id'], c['start_ms'], c['end_ms'], c['candidate_id']))
     selected = []
     while ranked and len(selected) < top_n:
         seen = set()
