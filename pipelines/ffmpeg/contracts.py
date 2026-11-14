@@ -88,15 +88,24 @@ def unavailable_judge(reason='No configured provider'):
 
 def usage_summary(episode_dir):
     path=Path(episode_dir)/'llm-usage.json'
-    calls=read_json(path)['calls'] if path.exists() else []
-    fields=['call_id','role','provider','model','status','input_tokens','output_tokens','cost_usd','cost_status','reserved_usd','error']
-    clean=[{k:c.get(k) for k in fields} for c in calls]
-    total=sum(c['cost_usd'] or 0 for c in clean)
+    try:
+        ledger=read_json(path) if path.exists() else {'calls':[]}
+        calls=ledger['calls']
+        fields=['call_id','role','provider','model','status','input_tokens','output_tokens','cost_usd','cost_status','reserved_usd','error']
+        clean=[{k:c.get(k) for k in fields} for c in calls]
+        schema=read_json(Path(__file__).resolve().parents[2]/'schemas'/'qa-report.schema.json')
+        Draft202012Validator(schema['properties']['ai_usage']).validate(clean)
+        total=sum(c['cost_usd'] or 0 for c in clean)
+        json.dumps(clean,allow_nan=False)
+    except Exception as error:
+        raise StageError('USAGE_LEDGER_INVALID','validator','Usage ledger unreadable; charges cannot be reconstructed') from error
     # Local compute expense is not inferred from API charges.
     return clean,dict(status='unknown',usd=None,known_ai_usd=total,includes_failed_attempts=True)
 
 def failure_report(ctx, error):
-    calls,cost=usage_summary(ctx.episode_dir)
+    try:calls,cost=usage_summary(ctx.episode_dir)
+    except StageError as usage_error:
+        error=usage_error;calls=[];cost=dict(status='unknown',usd=None,known_ai_usd=0,includes_failed_attempts=True)
     return dict(schema_version='1.0',episode_id=ctx.episode_id,goal=ctx.goal,stage=error.stage,
         passed=False,result='failed',fixture_mode=ctx.fixture_mode,interpretation=None,assumptions=[],
         coverage=dict(status='unknown',limitations=[]),exclusions=[],limitations=[],output_path=None,
@@ -109,6 +118,8 @@ def validate_report(report):
     names=[c['name'] for c in report['checks']]
     if len(set(names))!=len(names): raise StageError('REPORT_INVALID','validator','Duplicate checks')
     if report['passed']:
+        required={'narrative_schema','readable_media','output_encoding','output_dimensions','output_fps','loudness','true_peak','timeline_and_padding','render_duration','goal_duration','contact_sheet'}
+        if not required.issubset(set(names)):raise StageError('REPORT_INVALID','validator','Required gates absent')
         if any(c['required'] and c['status']!='pass' for c in report['checks']):
             raise StageError('REPORT_INVALID','validator','Unpassed required check')
         if not -15<=report['integrated_lufs']<=-13 or report['true_peak_dbtp']>-1:

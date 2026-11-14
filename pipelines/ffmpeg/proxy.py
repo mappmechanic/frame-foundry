@@ -23,7 +23,7 @@ def create_proxy(source_path, output_path, *, max_side=640, fps=15):
     source_path=Path(source_path); output_path=Path(output_path); output_path.parent.mkdir(parents=True,exist_ok=True)
     original=probe(source_path)
     run(['ffmpeg','-y','-v','error','-threads','2','-i',str(source_path),'-map','0:v:0','-map','0:a:0?',
-         '-vf',f'scale={max_side}:{max_side}:force_original_aspect_ratio=decrease:force_divisible_by=2,setsar=1',
+         '-vf',f'scale={max_side}:{max_side}:force_original_aspect_ratio=decrease:force_divisible_by=2,setsar=1,fps={fps}',
          '-r',str(fps),'-c:v','libx264','-preset','ultrafast','-crf','28','-pix_fmt','yuv420p',
          '-threads','2','-filter_threads','1','-c:a','aac','-ar','48000','-metadata:s:v:0','rotate=0',str(output_path)])
     proxy=probe(output_path)

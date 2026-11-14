@@ -2,7 +2,7 @@
 from pathlib import Path
 from fractions import Fraction
 import contextlib, os, socket
-from PIL import Image, ImageStat, ImageFilter
+from PIL import Image, ImageStat, ImageFilter, ImageChops
 from .contracts import StageError,atomic_write_json
 from .proxy import probe,create_proxy,sample_keyframes,run
 
@@ -62,6 +62,8 @@ def run_refinery(ctx,footage_dir,*,transcriber=None):
         frames=sample_keyframes(proxy,ctx.episode_dir/'frames'/sid)
         for f in frames:f['path']=str(Path(f['path']).relative_to(ctx.episode_dir));f['source_time_ms']=min(f['source_time_ms'],source['duration_ms']-1)
         source['keyframes']=frames
+        with Image.open(ctx.episode_dir/frames[0]['path']) as first, Image.open(ctx.episode_dir/frames[-1]['path']) as last:
+            motion=ImageStat.Stat(ImageChops.difference(first.convert('L'),last.convert('L').resize(first.size))).mean[0]/255
         if source['has_audio']:
             if transcriber is not None:ws=transcriber.words(source) if hasattr(transcriber,'words') else transcriber(source)
             else:ws=transcribe_words(source,model_dir=os.environ.get('FRAMEFOUNDRY_MODEL_DIR','models'))
@@ -81,7 +83,7 @@ def run_refinery(ctx,footage_dir,*,transcriber=None):
                 gray=image.convert('L');brightness=ImageStat.Stat(gray).mean[0]/255
                 sharpness=ImageStat.Stat(gray.filter(ImageFilter.FIND_EDGES)).mean[0]
             tokens=[w['text'].lower() for w in ws if w['start_ms']<b and w['end_ms']>a]
-            scenes.append(dict(scene_id=f'{sid}-scene-{j}',source_id=sid,start_ms=a,end_ms=b,thumbnail_path=frame['path'],brightness=brightness,sharpness=sharpness,motion=0.,tokens=tokens))
+            scenes.append(dict(scene_id=f'{sid}-scene-{j}',source_id=sid,start_ms=a,end_ms=b,thumbnail_path=frame['path'],brightness=brightness,sharpness=sharpness,motion=motion,tokens=tokens))
     analysis=dict(schema_version='1.0',episode_id=ctx.episode_id,goal=ctx.goal,sources=sources,scenes=scenes,words=words,exclusions=excluded)
     atomic_write_json(ctx.episode_dir/'transcript.json',dict(schema_version='1.0',episode_id=ctx.episode_id,words=words))
     atomic_write_json(ctx.episode_dir/'analysis.json',analysis);atomic_write_json(ctx.episode_dir/'proxy-map.json',maps)
