@@ -1,0 +1,99 @@
+{
+  "version": 1,
+  "baseline_commit": "ea0887ea1113efb666ba893be15bf953f37869ad",
+  "scope": "WO-17 documentation only; does not enable policy/runtime or certify video output.",
+  "sources": [
+    {
+      "repository": "kajisho5/remotion-ffmpeg-skill",
+      "url": "https://github.com/kajisho5/remotion-ffmpeg-skill",
+      "commit": "e34a10dd2fefcc1cccd07352e272b89dcc6b3f3c",
+      "license": "MIT",
+      "copyright": "Copyright (c) 2026 kajisho5",
+      "license_file": "docs/skills/licenses/kajisho5-remotion-ffmpeg-skill-MIT.txt",
+      "license_sha256": "7522b29e4d6e90f2a8fab15f07d224b1064c70692a872be9996ac1a88cf474e9",
+      "inspected_paths": [
+        "SKILL.md",
+        "scripts/_sparse.py",
+        "docs/adr/0001-render-determinism.md"
+      ],
+      "adapted_in": [
+        "remotion-sparse-overlays",
+        "visual-qa-validator"
+      ],
+      "adaptation": "Measure/draw/verify separation, sparse interval mapping, environment-qualified determinism.",
+      "copied_paths": [
+        "LICENSE"
+      ],
+      "exceptions": "All assets/media excluded from this integration."
+    },
+    {
+      "repository": "haidrrrry/claude-remotion-skill",
+      "url": "https://github.com/haidrrrry/claude-remotion-skill",
+      "commit": "1dcbe5e3fc6cf970bd10d3cc05f0a8a5d19d0383",
+      "license": "MIT",
+      "copyright": "Copyright (c) 2025 haidrrrry",
+      "license_file": "docs/skills/licenses/haidrrrry-claude-remotion-skill-MIT.txt",
+      "license_sha256": "e9cb352fbe6212007b61e7c43982e4741852b1e467fe07093256ec04228f2b85",
+      "inspected_paths": [
+        "remotion-motion-graphics/SKILL.md",
+        "remotion-motion-graphics/references/motion-patterns.md",
+        "remotion-motion-graphics/references/design-rules.md",
+        "remotion-motion-graphics/assets/theme.ts"
+      ],
+      "adapted_in": [
+        "remotion-sparse-overlays",
+        "voice-and-audio",
+        "visual-qa-validator"
+      ],
+      "adaptation": "Frame-driven motion, restrained design and render/inspect loop; no theme/code copied.",
+      "copied_paths": [
+        "LICENSE"
+      ],
+      "exceptions": "All assets/media excluded from this integration."
+    },
+    {
+      "repository": "artemnovitckii/claude-editing-skills",
+      "url": "https://github.com/artemnovitckii/claude-editing-skills",
+      "commit": "beff6b868a8c1bdfad8661bd8a298497e75568a3",
+      "license": "MIT",
+      "copyright": "Copyright (c) 2026 Artem Novitckii",
+      "license_file": "docs/skills/licenses/artemnovitckii-claude-editing-skills-MIT.txt",
+      "license_sha256": "797f955654969b82350f0b591c03d09bcefbef346f8e4b817c4f476284c885c7",
+      "inspected_paths": [
+        "skills/storytelling/SKILL.md",
+        "skills/behind-the-person/SKILL.md"
+      ],
+      "adapted_in": [
+        "vlog-pacing",
+        "visual-qa-validator"
+      ],
+      "adaptation": "Real-source story evidence and measured speaker-safe framing; no templates/code copied.",
+      "copied_paths": [
+        "LICENSE"
+      ],
+      "exceptions": "Fonts are OFL 1.1; assets/style-showcase and docs/style-showcase third-party media excluded. All fonts/media excluded from this integration."
+    }
+  ],
+  "original_skills": [
+    "rough-cut"
+  ],
+  "excluded_sources": [
+    {
+      "repository": "appariciojunior",
+      "reason": "User reports CC-BY-NC; not cloned, read or copied."
+    },
+    {
+      "repository": "remotion-dev/skills",
+      "reason": "User reports no license; not cloned, read or copied."
+    },
+    {
+      "repository": "OpenMontage",
+      "reason": "User reports AGPL; not cloned, read or copied."
+    }
+  ],
+  "optional_index": "zhuyansen CC0 reference index not used; no projects copied.",
+  "excluded_content": [
+    "all media, photographs, sample footage, preview media and fonts",
+    "upstream installers, packaged skills, runtime scripts, templates and bulk prompts"
+  ]
+}
