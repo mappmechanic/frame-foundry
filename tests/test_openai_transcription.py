@@ -155,3 +155,17 @@ def test_real_audio_mock_asr_eligible_for_word_gate_and_single_judge(media,tmp_p
     assert [r for r,_ in calls]==['planner','judge']
     assert len([r for r in qa['ai_usage'] if r['role']=='transcription'])==len(read_json(root/'analysis.json')['transcription_sources'])
     assert e['model_cost']['known_usd']==pytest.approx(sum(r['cost_usd'] for r in qa['ai_usage']))
+
+
+def test_duration_billed_cost_breakdown_preserves_unknown_failure(tmp_path):
+    from pipelines.ffmpeg.evaluator import model_cost
+    row=dict(call_id='asr',role='transcription',provider='openai',model='whisper-1',status='success',input_tokens=None,output_tokens=None,cost_usd=.0264,cost_status='estimated',reserved_usd=.03,error=None)
+    (tmp_path/'llm-usage.json').write_text(json.dumps(dict(version=2,calls=[row])))
+    cost,tokens=model_cost(tmp_path,.5)
+    assert cost['asr_usd']==.0264 and cost['llm_usd']==0
+    assert cost['usd']==.0264 and cost['quality_per_dollar']==pytest.approx(.5/.0264,abs=1e-6)
+    assert tokens==dict(input=0,output=0,complete=True)
+    row.update(status='failed',cost_usd=None)
+    (tmp_path/'llm-usage.json').write_text(json.dumps(dict(version=2,calls=[row])))
+    cost,_=model_cost(tmp_path,.5)
+    assert cost['asr_usd'] is None and cost['usd'] is None and cost['quality_per_dollar'] is None

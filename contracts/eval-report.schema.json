@@ -531,6 +531,13 @@
         },
         "notes": {
           "$ref": "#/$defs/strings"
+        },
+        "asr_usd": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
         }
       }
     },

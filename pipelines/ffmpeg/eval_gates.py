@@ -581,6 +581,12 @@ def _word_check(root, analysis, shots, checks, limitations):
     if not isinstance(words, list):
         checks['word_cut_integrity'] = check('word_cut_integrity', 'not_run', 'Word evidence (transcript.json) unavailable')
         return
+    if status in ('openai_asr','mixed_asr'):
+        for sid in expected:
+            audit=covered[sid]
+            if not isinstance(audit,dict) or audit.get('provider') not in ('openai','local') or audit.get('model') != ('whisper-1' if audit.get('provider')=='openai' else 'whisperx') or audit.get('word_count')!=sum(w.get('source_id')==sid for w in words if isinstance(w,dict)):
+                checks['word_cut_integrity']=check('word_cut_integrity','not_run','ASR provenance/word-count evidence incomplete')
+                return
     try:
         violations, clamps = word_cut_violations(shots, words)
     except (KeyError, TypeError, AttributeError):

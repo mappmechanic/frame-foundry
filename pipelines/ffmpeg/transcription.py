@@ -109,6 +109,7 @@ class OpenAITranscriber(accounting.LLMProvider):
         key=hashlib.sha256(json.dumps(material,sort_keys=True).encode()).hexdigest()
         cache=Path(os.environ.get('FRAMEFOUNDRY_CACHE_DIR',str(Path(__file__).resolve().parents[2]/'.inference-cache')))/'transcription'/f'{key}.json'
         try:
+            if cache.stat().st_size>accounting.MAX_RESPONSE_BYTES:raise ValueError('Oversized cache')
             stored=accounting._strict_json(cache.read_text())
             if stored['identity']==material:
                 words=_words(stored['response'],source)
@@ -159,7 +160,8 @@ class OpenAITranscriber(accounting.LLMProvider):
             if entry['status']!='success':raise StageError('ASR_FAILED','refinery',entry['error'],source['source_id'])
             # Persist only validated word evidence, never credential/provider bodies.
             safe=dict(text=' '.join(w['text'] for w in words),words=[dict(word=w['text'],start=w['start_ms']/1000,end=w['end_ms']/1000) for w in words])
-            atomic_write_json(cache,dict(identity=material,response=safe,historical_usage=entry))
+            try:atomic_write_json(cache,dict(identity=material,response=safe,historical_usage=entry))
+            except OSError:pass  # Cache availability must not discard valid paid evidence.
             self.sources[source['source_id']]=dict(provider='openai',model=MODEL,cached=False,word_count=len(words))
             return words
 
@@ -184,7 +186,9 @@ class TranscriptionRouter:
             except StageError as exc:
                 unavailable=exc.code=='DEPENDENCY_MISSING' or isinstance(exc.__cause__,(ImportError,ModuleNotFoundError))
                 if not unavailable or self.mode=='local':raise
-        if self.remote is None:self.remote=OpenAITranscriber.from_env()
+        if self.remote is None:
+            try:self.remote=OpenAITranscriber.from_env()
+            except accounting.ProviderError as exc:raise StageError('ASR_CONFIG_INVALID','refinery',str(exc),source['source_id']) from None
         if self.remote is None:raise StageError('DEPENDENCY_MISSING','refinery','WhisperX is unavailable and no OpenAI transcription key is configured',source['source_id'])
         words=self.remote.words(source,episode_dir=self.ctx.episode_dir)
         self.sources[source['source_id']]=self.remote.sources[source['source_id']]

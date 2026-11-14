@@ -246,21 +246,28 @@ def model_cost(episode_dir, Q):
             notes.append('tts-usage.json unreadable; TTS spend unknown')
     else:
         notes.append('No TTS ledger: zero known TTS spend')
+    asr_calls=[]
     try:
-        l_total, l_unknown, l_est, l_notes = _ledger_cost(llm_calls, 'LLM')
+        asr_calls=[c for c in llm_calls if c.get('role')=='transcription']
+        text_calls=[c for c in llm_calls if c.get('role')!='transcription']
+        a_total,a_unknown,a_est,a_notes=_ledger_cost(asr_calls,'ASR')
+        l_total, l_unknown, l_est, l_notes = _ledger_cost(text_calls, 'LLM')
         t_total, t_unknown, t_est, t_notes = _ledger_cost(tts_calls, 'TTS')
     except Exception:
-        l_total = t_total = Decimal(0)
-        l_unknown = t_unknown = True
-        l_est = t_est = False
-        l_notes, t_notes = ['Usage ledger entries malformed'], []
-    notes += l_notes + t_notes
+        l_total = t_total = a_total = Decimal(0)
+        l_unknown = t_unknown = a_unknown = True
+        l_est = t_est = a_est = False
+        l_notes, t_notes, a_notes = ['Usage ledger entries malformed'], [], []
+    notes += l_notes + t_notes + a_notes
+    if asr_calls:
+        notes.append('ASR is duration-billed at a configured assumed rate; tokens are not applicable and cost is not an invoice')
     l_unknown |= unknown_llm
     t_unknown |= unknown_tts
     llm_usd = None if l_unknown else float(l_total)
     tts_usd = None if t_unknown else float(t_total)
-    usd = None if (l_unknown or t_unknown) else float(l_total + t_total)
-    status = 'unknown' if usd is None else ('estimated' if (l_est or t_est) else 'measured')
+    asr_usd=None if (a_unknown or unknown_llm) else float(a_total)
+    usd = None if (l_unknown or t_unknown or a_unknown) else float(l_total + t_total + a_total)
+    status = 'unknown' if usd is None else ('estimated' if (l_est or t_est or a_est) else 'measured')
     if not llm_calls and not tts_calls and usd is not None:
         notes.append('No model calls recorded: known zero model spend')
     qpd = Q / usd if (Q is not None and usd is not None and usd > 0) else None
@@ -275,7 +282,7 @@ def model_cost(episode_dir, Q):
             tokens_out += o
         else:
             complete = False
-    cost = dict(usd=usd, status=status, known_usd=float(l_total + t_total), llm_usd=llm_usd, tts_usd=tts_usd,
+    cost = dict(usd=usd, status=status, known_usd=float(l_total + t_total + a_total), llm_usd=llm_usd, tts_usd=tts_usd, asr_usd=asr_usd,
                 quality_per_dollar=round(qpd, 6) if qpd is not None else None, notes=notes)
     return cost, dict(input=tokens_in, output=tokens_out, complete=complete)
 

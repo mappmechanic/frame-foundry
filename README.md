@@ -27,19 +27,39 @@ not the old Python 3.14 venv. Linux-only Python 3.14 success is not Mac support.
 The assembler still normalizes and round-trips typed metadata through native JSON.
 
 
-### Local speech recognition
+### Real word ASR and scoring
 
-For real speech/word-integrity verification, install `requirements-whisperx.txt`
-in a compatible CPU/GPU environment and deliberately provision local assets:
-`FRAMEFOUNDRY_MODEL_DIR/transcription/` (faster-whisper model), `alignment/`
-(WhisperX alignment model), and cached VAD assets. Runtime model initialization
-blocks downloads. Missing assets produce an accepted-run failure report, not fake
-transcription. Genuine WhisperX and Mac hardware execution are not yet verified.
+The default `--asr-provider auto` prefers provisioned offline WhisperX. If its
+package/assets are unavailable and `OPENAI_API_KEY` is configured, it uploads
+normalized source audio to OpenAI `whisper-1` with `verbose_json` and word-level
+timestamps. `--asr-provider openai` explicitly selects that route; `local` disables
+cloud fallback. Missing keys/assets, failed requests, missing word times, or
+incomplete source coverage do **not** become a verified empty transcript.
+Originals remain immutable; delayed audio keeps its common source/video origin.
 
-`--visual-only` is an **explicit diagnostic mode** when these assets are absent.
-It can render real footage/audio and pass the existing technical QA, but does not
-certify speech integrity. Its eval word gate is `not_run`, G=0 and Q=0; no judge
-is called. An empty fixture transcript is never substituted for real speech.
+For local ASR, install `requirements-whisperx.txt` and provision
+`FRAMEFOUNDRY_MODEL_DIR/transcription/`, `alignment/`, and cached VAD assets.
+Runtime local-model loading blocks downloads. Only missing dependencies trigger
+fallback; invalid local analysis is not silently replaced. No key is loaded from
+`.env` by the application—export a trusted local file into the process yourself.
+
+Transcription has `role=transcription` in `llm-usage.json`, duration-based estimated
+cost, and **null/not-applicable LLM token counts**. The configured assumed rate is
+`FRAMEFOUNDRY_ASR_USD_PER_MINUTE` (historical default **$0.006/min**, not a verified
+current tariff/invoice). Rough Arizona input-only estimate: 263.3 s is ~$0.0264
+before per-source rounding, Planner/judge, unknown failed charges, and local compute.
+Check your account's rate and override it if necessary. Reservations share the
+$0.25 Episode/$500 project limits; network failures retain unknown reservations.
+Successful content/model-keyed transcripts cache across Goals/Episodes, with no
+new charges or usage rows on cache hits. Reused historical charges are not billed
+again in quality-per-dollar. Eval reports separately show `asr_usd` and include
+transcription in total model cost.
+
+`--visual-only` is an explicit **no-ASR diagnostic mode**, not the scoring demo.
+It does not certify speech integrity: word gate `not_run`, G=0/Q=0, no judge.
+Remove that flag to use real ASR and make word/judge gates eligible. No fixture
+transcript or fabricated score is substituted for ASR or a live judge.
+
 
 ## Arizona demo (26 real clips, private release)
 
@@ -52,7 +72,7 @@ source .env
 set +a
 export FRAMEFOUNDRY_LLM_PROVIDER=openai
 # With provisioned local ASR assets:
-make demo-arizona ARGS='--episode arizona-demo'
+make demo-arizona ARGS='--episode arizona-demo --asr-provider auto'
 # Or an explicitly labeled visual-only diagnostic:
 make demo-arizona ARGS='--episode arizona-visual --visual-only'
 ```
@@ -69,8 +89,13 @@ Use a fresh Episode ID on each run. Outputs are in `episodes/<id>/`:
 `finished.mp4`, `contact-sheet.jpg`, `qa-report.json`, `eval-report.json`,
 `narrative-spec.json`, `timeline.otio`, transcript/analysis, and ignored work media.
 Failed QA/evaluation renders retain `diagnostic.mp4` with a diagnostic path
-in the QA report, not an advertised finished clip. Default target is 45 seconds and 1080×1920, 30 fps; a Goal can request 16:9
-(1920×1080) and an explicit 5–120 second target. Originals are never modified.
+in the QA report, not an advertised finished clip. Portrait output center-crops to fill 1080×1920 (no landscape letterbox); this
+can remove edge subjects, and does not promise subject tracking. Teaser planning
+targets 2–3 second shots, while genuine speech protection can require longer
+quotes. Boundary/judge tiles match portrait content with readable labels; no extra
+model images/calls were added. Default target is 45 seconds at 30 fps; a Goal can request 16:9
+(1920×1080) and an explicit 5–120 second target. Originals are never modified. CLI completion prints G, Q, J, D and
+`quality_per_dollar` from `eval-report.json`; missing scores remain null.
 
 `make fetch-arizona` only downloads. To run the private sample integration test:
 
