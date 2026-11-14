@@ -126,11 +126,32 @@ def matches(spec,analysis,clip,section,root):
             return dict(kind='retained_transcript',source_id=sid,start_ms=round(a),end_ms=round(b),cue=cue)
     return None
 
+def readable_frames(first,end,hidden):
+    """Full-strength hold on the 30fps grid; boundary masks in fades are not lost twice."""
+    # Conservatively round each 250ms fade up to eight frames.
+    lo,hi=first+8,end-8
+    return max(0,hi-lo)-len({f for f in hidden if lo<=f<hi})
+
+
+def free_intervals(first,end,occupied):
+    """Earliest unoccupied pieces, without jumping past a later reserved card."""
+    cursor=first
+    for lo,hi in sorted(occupied):
+        if hi<=cursor:continue
+        if lo>=end:break
+        if cursor<lo:yield cursor,min(lo,end)
+        cursor=max(cursor,hi+1)
+        if cursor>=end:return
+    if cursor<end:yield cursor,end
+
+
 def compile_cards(spec,analysis,timeline,root):
     from .render import output_frames
     if not spec.get('overlays'):return spec
     plan=copy.deepcopy(spec['overlays']);plan.update(cards=[],limitations=[],render_sha256=None,plan_sha256=None,font_sha256=None,style_sha256=None)
+    old_omissions={n for n in spec['overlays'].get('limitations',[]) if n.startswith('Requested section ') and ' omitted:' in n}
     spec=copy.deepcopy(spec);spec['overlays']=plan
+    spec['coverage']['limitations']=[n for n in spec['coverage']['limitations'] if n not in old_omissions]
     clips=list(timeline.tracks[0]);w,h=(1080,1920) if spec['aspect_ratio']=='9:16' else (1920,1080)
     starts=[];cursor=0
     for c in clips:starts.append((cursor,output_frames(c.source_range.duration.to_seconds())));cursor+=starts[-1][1]
@@ -147,16 +168,15 @@ def compile_cards(spec,analysis,timeline,root):
             for following in range(index+1,len(clips)):
                 if not matches(spec,analysis,clips[following],section,root):break
                 end_limit=starts[following][0]+starts[following][1]
-        for lo,hi in occupied:
-            if first<hi and lo<end_limit:first=max(first,hi+1)
-        if first>=end_limit:return False
-        target=105 if kind=='title' else 90  # <=3.5s title; >=2.5s stationary label.
-        end=min(end_limit,first+target)
-        while end<end_limit and (end-first-len(clear_frames(first,end)))/30-.5<2.5:
-            if kind=='title' and end-first>=105:break
-            end+=1
-        hidden=clear_frames(first,end)
-        if (end-first-len(hidden))/30-.5<2.5:return False
+        for first,available_end in free_intervals(first,end_limit,occupied):
+            target=105 if kind=='title' else 91
+            end=min(available_end,first+target)
+            while end<available_end and readable_frames(first,end,clear_frames(first,end))<75:
+                if kind=='title' and end-first>=105:break
+                end+=1
+            hidden=clear_frames(first,end)
+            if readable_frames(first,end,hidden)>=75:break
+        else:return False
         card=layout(text,w,h)
         if clean(card['text'])!=clean(text):plan['limitations'].append('Overlay text shortened to keep the required large two-line cap height')
         card.update(kind=kind,shot_id=f'shot-{index+1:02d}',start_frame=first,end_frame=end,evidence=proof,cut_frames=hidden)
@@ -166,11 +186,14 @@ def compile_cards(spec,analysis,timeline,root):
     if not add('title',plan['title'],0,dict(kind='operator_goal',source_id='',start_ms=0,end_ms=0,cue='')):
         raise StageError('OVERLAY_DURATION','assembler','Title lacks a 2.5s readable interval within 3.5s')
     for section,name in enumerate(plan['sections']):
-        found=False
+        found=False;grounded=False
         for i,clip in enumerate(clips):
             proof=matches(spec,analysis,clip,section,root)
+            grounded |= bool(proof)
             if proof and add('section',f'{section+1}. {name}',i,proof,section):found=True;break
-        if not found:plan['limitations'].append(f'Requested section {section+1} omitted: no grounded cut-safe readable interval')
+        if not found:
+            reason='grounded footage found, but no free 2.5s full-strength hold after fades/cut masks' if grounded else 'no retained transcript or verified in-window frame matched'
+            plan['limitations'].append(f'Requested section {section+1} omitted: no grounded cut-safe readable interval ({reason})')
     for note in plan['limitations']:
         if 'omitted:' in note and note not in spec['coverage']['limitations']:
             spec['coverage']['status']='partial';spec['coverage']['limitations'].append(note)
@@ -240,10 +263,10 @@ def verify(spec,video,cuts,duration_ms):
     cards=plan['cards'];results={name:True for name in CHECKS};results['overlay_legibility']=bool(cards)
     for c in cards:
         results['overlay_safe_area'] &= (0<=c['x'] and c['x']+c['width']<=w and c['y']>=math.ceil(h*.12) and c['y']+c['height']+8<=math.floor(h/3))
-        results['overlay_duration'] &= (c['end_frame']-c['start_frame']-len(c.get('cut_frames',[])))/30-.5>=2.5 and 0<=c['start_frame']<c['end_frame']<=round(duration_ms*30/1000)+1
+        results['overlay_duration'] &= readable_frames(c['start_frame'],c['end_frame'],c.get('cut_frames',[]))>=75 and 0<=c['start_frame']<c['end_frame']<=round(duration_ms*30/1000)+1
         if c['kind']=='title':results['overlay_duration'] &= (c['end_frame']-c['start_frame'])/30<=3.5
         results['overlay_text_limits'] &= 1<=len(c['text'].splitlines())<=2 and all(len(x)<=42 for x in c['text'].splitlines())
-        results['overlay_cut_clearance'] &= all(not c['start_frame']/30*1000<=cut<c['end_frame']/30*1000 or round(cut*30/1000) in c.get('cut_frames',[]) for cut in cuts)
+        results['overlay_cut_clearance'] &= all(frame in c.get('cut_frames',[]) for cut in cuts for frame in (round(cut*30/1000)-1,round(cut*30/1000),round(cut*30/1000)+1) if c['start_frame']<=frame<c['end_frame'])
         luminance=((1-c.get('pill_opacity',0)+.055)/1.055)**2.4
         results['overlay_legibility'] &= c.get('cap_height',0)>=.05*h and .55<=c.get('pill_opacity',0)<=.65 and 1.05/(luminance+.05)>=4.5
         expected=layout(c['text'],w,h,c['position'])
