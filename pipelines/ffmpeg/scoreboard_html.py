@@ -8,6 +8,7 @@ import statistics
 import tempfile
 from pathlib import Path
 
+from .learning_view import read_curve
 from . import eval_tools as tools
 from .contracts import StageError, resolve_episode
 from .demo_scoreboard import _qa_pass, validated_reports
@@ -221,8 +222,35 @@ def _presenter(metrics, factory):
             '<p class="note">First-try flags come from evaluation.first_try_passed, not final QA. Ticket-to-clip is not measured; pipeline elapsed is a separate machine-time proxy. Shipment requires current QA, gates and matching export hash.</p></section>')
 
 
+def _learning_section(curve):
+    out = ['<section id="learning"><h2>Self-Improving · learning curve</h2>',
+           '<p>Offline backend: LocalJsonl. HydraDB: optional sponsor-backed provider, not proof of improvement.</p>']
+    if curve['status'] != 'recorded':
+        return ''.join(out) + '<p>Evaluation pending · no recorded learning curve. Opening this Scoreboard starts no experiment.</p></section>'
+    out.append('<p>Private recorded experiment: ' + _escape(curve['experiment_id']) + '. Observations are not causal proof.</p>')
+    for arm in ('memory_on', 'memory_off'):
+        out.append('<h3>' + arm.replace('_', ' ') + '</h3>')
+        out.append(_table(['Iteration', 'Source Episode', 'Status', 'J', 'Q', 'Model USD', 'Known USD', 'Cost status', 'Elapsed s'], [
+            (r['iteration'], r['episode_id'], r['status'], _number(r['J']), _number(r['Q']),
+             _number(r['model_usd'], 6), _number(r['known_model_usd'], 6), r['cost_status'], _number(r['elapsed_seconds'], 1))
+            for r in curve['arms'][arm]]))
+    on = {r['iteration']: r for r in curve['arms']['memory_on']}
+    off = {r['iteration']: r for r in curve['arms']['memory_off']}
+    rows = []
+    for d in curve['deltas']:
+        a, b = on.get(d['iteration']), off.get(d['iteration'])
+        comparable = bool(d['comparable'] and a and b and a['status'] == b['status'] == 'passed')
+        rows.append((d['iteration'], 'yes' if comparable else 'no', *(
+            _number(a[k] - b[k]) if comparable and a[k] is not None and b[k] is not None else 'N/A'
+            for k in ('J', 'Q', 'model_usd'))))
+    out.append(_table(['Iteration', 'Comparable', 'ΔJ on − off', 'ΔQ', 'Δ Model USD'], rows))
+    out.append('<p class="note">Unknown is N/A, not zero. Zero cost has no efficiency claim. Failed/incomplete pairs have unavailable deltas.</p>')
+    out.extend('<p class="note">' + _escape(x) + '</p>' for x in curve['limitations'])
+    return ''.join(out) + '</section>'
+
+
 def render_html(reports, *, episodes_root, unreadable_lines=0, input_unavailable=False,
-                assume_manual_minutes_per_episode=None, factory=None, baseline=None):
+                assume_manual_minutes_per_episode=None, factory=None, baseline=None, evals_root=None, curve=None):
     """One self-contained document; missing local Mac episodes remain explicit gaps."""
     minutes = assume_manual_minutes_per_episode
     if minutes is not None and (isinstance(minutes, bool) or not math.isfinite(minutes) or minutes <= 0):
@@ -248,6 +276,7 @@ def render_html(reports, *, episodes_root, unreadable_lines=0, input_unavailable
            '</style></head><body><main><p class="eyebrow">FrameFoundry · generation-time snapshot</p>',
            '<h1>Teaser quality &amp; factory scoreboard</h1>',
            _presenter(m,factory),
+           _learning_section(curve if curve is not None else read_curve(evals_root if evals_root is not None else Path(episodes_root).parent/'evals')),
            '<details><summary>Detailed metrics, methods &amp; disclosures</summary>',
            '<p>Latest validated evaluation per episode. No live Mac data is fabricated; this file updates only when regenerated with local evaluation JSONL and episode artifacts.</p>',
            '<section><h2>Latest episodes</h2>',

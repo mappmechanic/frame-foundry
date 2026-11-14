@@ -171,7 +171,7 @@ def test_empty_export_has_no_invented_media(page):
 def test_unsafe_ids_are_never_requested_or_shown(unsafe):
     page = Page('studio.html')
     out = execute(page, {'/runs/index.json': index([summary(unsafe)])})
-    assert [r['path'] for r in out['requests']] == ['/runs/index.json', '/runs/campaigns.json']
+    assert [r['path'] for r in out['requests']] == ['/runs/index.json', '/runs/campaigns.json', '/runs/learning.json']
     assert out['elements']['run-picker']['disabled']
     assert out['elements']['run-heading']['text'] == ''  # Initial heading, untouched by unsafe IDs.
 
@@ -197,7 +197,7 @@ def test_valid_recorded_run_exposes_evidence_without_conflating_signals():
     assert '4 / 5 shot-01, shot-03' in el['judge-rows']['text']
     assert el['weakest-shot']['text'] == 'shot-03'
     assert el['contact-sheet']['src'] == '/runs/az-0835/contact-sheet.jpg'
-    assert sorted(r['path'] for r in out['requests']) == ['/runs/az-0835/run.json', '/runs/campaigns.json', '/runs/index.json']
+    assert sorted(r['path'] for r in out['requests']) == ['/runs/az-0835/run.json', '/runs/campaigns.json', '/runs/index.json', '/runs/learning.json']
 
 
 def test_bad_identity_or_missing_run_never_leaves_stale_metrics():
@@ -229,7 +229,7 @@ def test_path_allowlist_null_scores_and_untrusted_text():
 def test_get_json_rejects_non_public_paths_before_fetch(page):
     out=execute(page,action="Promise.all(['//evil.invalid/x','/runs/../private','/runs/x/finished.mp4','/api/render',null].map(p=>getJSON(p).then(()=>false,()=>true)))")
     assert out['result']==[True]*5
-    assert all(req['path'] in ['/runs/index.json','/runs/scoreboard.json','/runs/campaigns.json'] for req in out['requests'])
+    assert all(req['path'] in ['/runs/index.json','/runs/scoreboard.json','/runs/campaigns.json','/runs/learning.json'] for req in out['requests'])
 
 
 def test_picker_fetches_are_race_safe_and_clear_previous_data():
