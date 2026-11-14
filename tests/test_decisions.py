@@ -8,7 +8,7 @@ from pipelines.ffmpeg.llm_provider import ProviderBudgetError
 
 
 def rows(n=1):
-    return [dict(candidate_id=f'candidate-{i}',quality={'visual_score':50}) for i in range(n)]
+    return [dict(candidate_id=f'candidate-{i}',quality={'visual_score':50},frame_in_window=True,tile_index=0) for i in range(n)]
 
 
 def response(questions):
@@ -104,3 +104,58 @@ def test_no_key_recorded_fallback(tmp_path,monkeypatch):
 def test_heuristic_no_client_dispatch(tmp_path):
     c=Client();r=d.selection_hints(ctx(tmp_path,'heuristic'),rows(),[],client=c)
     assert r['answers'] and not c.calls
+
+
+def test_emitted_sidecar_and_ledger_strict_artifact_schemas(tmp_path):
+    from jsonschema import Draft202012Validator
+    from pathlib import Path
+    d.selection_hints(ctx(tmp_path),rows(),[],['section'],Client())
+    schema=json.loads((Path(__file__).resolve().parents[1]/'schemas/episode-artifacts.schema.json').read_text())
+    for filename,definition in [('decisions-report.json','decisions_report'),('llm-usage.json','llm_usage')]:
+        Draft202012Validator(schema['$defs'][definition]).validate(json.loads((tmp_path/filename).read_text()))
+
+
+def test_sections_require_retained_frame_evidence():
+    assert len(d.batch([dict(candidate_id='candidate-0')],['section']))==5
+
+
+@pytest.mark.parametrize('mutate',[
+    lambda r:r.update(model='wrong-model'),
+    lambda r:r['usage']['input_tokens_details'].update(cached_tokens=99,cache_write_tokens=99),
+    lambda r:r['answers'][1]['probabilities'][0].update(label='invented'),
+])
+def test_wrong_model_cache_overlap_and_score_labels_fallback(tmp_path,mutate):
+    r=d.selection_hints(ctx(tmp_path),rows(),[],client=Client(mutate=mutate))
+    assert r['effective_mode']=='heuristic' and r['answers'] is None
+
+
+def test_usage_overrun_is_terminal_not_hidden_fallback(tmp_path):
+    with pytest.raises(ProviderBudgetError):
+        d.selection_hints(ctx(tmp_path),rows(),[],client=Client(mutate=lambda r:r['usage'].update(input_tokens=999999)))
+    call=json.loads((tmp_path/'llm-usage.json').read_text())['calls'][0]
+    assert call['overrun'] is True
+
+
+def test_missing_cache_count_unknown(tmp_path):
+    r=d.selection_hints(ctx(tmp_path),rows(),[],client=Client(mutate=lambda r:r['usage']['input_tokens_details'].pop('cache_write_tokens')))
+    assert r['usage']['cache_write_tokens'] is None and r['usage']['cost_usd'] is None
+
+
+def test_missing_sdk_with_configured_key_fallback(tmp_path,monkeypatch):
+    import sys
+    monkeypatch.setenv('OPENAI_API_KEY','offline-not-real')
+    monkeypatch.setitem(sys.modules,'openai',None)
+    assert d.selection_hints(ctx(tmp_path),rows(),[])['effective_mode']=='heuristic'
+
+
+def test_cache_identity_changes_with_goal_and_episode(tmp_path):
+    a=ctx(tmp_path/'a');b=ctx(tmp_path/'b');b.episode_id='different';b.goal='Other Goal'
+    first=d.selection_hints(a,rows(),[],client=Client())
+    second=d.selection_hints(b,rows(),[],client=Client())
+    assert first['usage']['prompt_cache_key']!=second['usage']['prompt_cache_key']
+
+
+def test_private_frame_paths_not_dispatched(tmp_path):
+    r=rows();r[0]['frame_path']='/private/path';c=Client()
+    d.selection_hints(ctx(tmp_path),r,[],client=c)
+    assert '/private/path' not in json.dumps(c.calls)

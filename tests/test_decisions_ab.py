@@ -8,7 +8,7 @@ def arms():
     config={k:'matched' for k in MATCH_FIELDS};config['judge_protocol']='gpt-4.1-current-six-criteria'
     a=dict(episode_id='baseline',Q=.8,J=.8,total_model_cost_usd=.1,cost_status='estimated',quality_per_dollar=8,
            elapsed_seconds=20,hard_qa_passed=True,requested_mode='llm',effective_mode='llm',fallback_reason=None,
-           config=config,actual_footage_hash='matched',actual_goal='matched',decision_call_id=None)
+           config=config,actual_footage_hash='matched',actual_goal='matched',decision_call_id=None,actual_decisions_verified=True,canonical_judge_verified=True)
     b=deepcopy(a);b.update(episode_id='experimental',Q=.78,total_model_cost_usd=.09,requested_mode='decisions',effective_mode='decisions',decision_call_id='recorded')
     return a,b
 
@@ -19,7 +19,7 @@ def test_threshold_exact_and_no_activation():
     b['Q']=.779999;assert compare(a,b)['status']=='unqualified'
 
 
-@pytest.mark.parametrize('field,value', [('total_model_cost_usd',.1),('total_model_cost_usd',None),('Q',None),('J',None),('cost_status','unknown'),('effective_mode','heuristic'),('hard_qa_passed',False),('elapsed_seconds',None),('decision_call_id',None),('fallback_reason','timeout')])
+@pytest.mark.parametrize('field,value', [('total_model_cost_usd',.1),('total_model_cost_usd',None),('Q',None),('J',None),('cost_status','unknown'),('effective_mode','heuristic'),('hard_qa_passed',False),('elapsed_seconds',None),('decision_call_id',None),('actual_decisions_verified',False),('canonical_judge_verified',False),('fallback_reason','timeout')])
 def test_incomplete_equal_cost_or_fallback_cannot_qualify(field,value):
     a,b=arms();b[field]=value
     assert compare(a,b)['status']=='unqualified'

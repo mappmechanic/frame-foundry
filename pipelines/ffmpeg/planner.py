@@ -483,7 +483,10 @@ def plan_teaser(ctx: EpisodeContext, analysis: dict, *, provider=_DEFAULT_PROVID
         spec = _reconstruct(ctx, analysis, intent, data, 'deterministic')
     from .decisions import selection_hints
     if not rows:
-        selection_hints(ctx,[],[],())
+        report=selection_hints(ctx,[],[],())
+        if getattr(ctx,'decider_mode','llm')=='llm':
+            report['fallback_reason']=cause
+            atomic_write_json(ctx.episode_dir/'decisions-report.json',report)
     elif getattr(ctx,'decider_mode','llm')=='llm':
         from .contracts import read_json
         report=read_json(ctx.episode_dir/'decisions-report.json')

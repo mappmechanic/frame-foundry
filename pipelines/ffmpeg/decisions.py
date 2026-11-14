@@ -11,6 +11,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import time
 from decimal import Decimal
 from pathlib import Path
@@ -27,6 +28,8 @@ def batch(rows, sections=()):
     if not rows or len(rows) > MAX_CANDIDATES:
         raise ValueError('Candidate count must be 1..66; no automatic chunking')
     ids = [r['candidate_id'] for r in rows]
+    if any(not isinstance(i,str) or not re.fullmatch(r'[a-zA-Z0-9-]{1,80}',i) for i in ids):
+        raise ValueError('Invalid candidate identity')
     if len(set(ids)) != len(ids):
         raise ValueError('Duplicate candidate identity')
     if len(set(sections)) != len(sections) or 'other' in sections or any(not isinstance(s,str) or not s.strip() for s in sections):
@@ -44,7 +47,7 @@ def batch(rows, sections=()):
             if kind == 'score':
                 q['levels'] = [dict(label=str(i), description=d) for i, d in enumerate(('not worthy', 'moderate', 'strong'))]
             questions.append(q)
-        if sections:
+        if sections and row.get('frame_in_window') and type(row.get('tile_index')) is int:
             questions.append(dict(name=row['candidate_id']+':section', type='choice',
                 instructions='Assign supplied candidate to a section only with visible activity evidence; names are operator context, not location proof.',
                 choices=[dict(value=s, description=s) for s in [*sections, 'other']]))
@@ -85,7 +88,7 @@ def validate_answers(response, questions):
                 score=answer.get('score')
                 if type(score) not in (float,int) or not math.isfinite(score) or not 0<=score<=len(allowed)-1: raise ValueError('Invalid score')
                 if any(p.get('label') != q['levels'][p['value']]['label'] for p in probabilities): raise ValueError('Invalid level label')
-        result[name] = answer
+        result[name] = {k:v for k,v in answer.items() if k in ('name','type','probability','score','confidence','choice','probabilities')}
     return result
 
 
@@ -107,7 +110,7 @@ def sdk_client():
         import openai
         from importlib.metadata import version
         if tuple(int(x) for x in version('openai').split('.')[:2]) < (3,26): raise ValueError()
-        client = openai.OpenAI(max_retries=0, timeout=lp.TIMEOUT_SECONDS)
+        client = openai.OpenAI(base_url='https://api.openai.com/v1', max_retries=0, timeout=lp.TIMEOUT_SECONDS)
         if not hasattr(client, 'decisions'): raise ValueError()
         return client
     except Exception:

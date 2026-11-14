@@ -1,0 +1,13 @@
+{
+  "footage_hash": null,
+  "goal": "Create a 30 second Arizona family-trip teaser",
+  "sections": ["Halloween in Uptown Sedona", "Hilton Sedona Resort at Bell Rock"],
+  "render": {"duration_seconds": 30, "aspect": "9:16"},
+  "overlays": true,
+  "voiceover": false,
+  "asr": "local",
+  "planner_model": null,
+  "judge_protocol": "gpt-4.1-current-six-criteria",
+  "scoring_protocol": "scores-1.1-crop",
+  "cache_policy": "cold; separate empty local inference cache per arm; disclose provider cache usage"
+}
