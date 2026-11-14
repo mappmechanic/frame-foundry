@@ -65,7 +65,7 @@ class ProviderTests(unittest.TestCase):
 
     def call(self, provider, **kwargs):
         args = dict(system='You are a planner', prompt='Plan a reel', images=[],
-                    role='planner', episode_dir=self.directory)
+                    role='worker', episode_dir=self.directory)
         args.update(kwargs)
         return provider.complete_json(**args)
 
@@ -205,7 +205,12 @@ class ProviderTests(unittest.TestCase):
         self.assertEqual(module._charged(usage), Decimal(str(usage['reserved_usd'])))
         self.assertNotIn('secret-test-key', (self.directory / 'llm-usage.json').read_text())
 
+    def roomy_budget(self):
+        os.environ['FRAMEFOUNDRY_EPISODE_API_BUDGET_USD'] = '2'
+        os.environ['FRAMEFOUNDRY_EPISODE_TOKEN_BUDGET'] = '200000'
+
     def test_invalid_json_retains_tokens(self):
+        self.roomy_budget()
         for text in ('not json', '[]', '```json\n{}\n```', '{"x":NaN}', '{"x":1,"x":2}'):
             with self.subTest(text=text):
                 with self.assertRaises(ProviderError):
@@ -222,6 +227,7 @@ class ProviderTests(unittest.TestCase):
         self.assertEqual(module._charged(usage), Decimal(str(usage['reserved_usd'])))
 
     def test_invalid_or_partial_usage_and_cache_tokens(self):
+        self.roomy_budget()
         for raw_usage, expected in [({'input_tokens': True, 'output_tokens': 10}, None),
                                     ({'input_tokens': -1, 'output_tokens': 10}, None),
                                     ({'input_tokens': 4}, 4),
@@ -265,10 +271,11 @@ class ProviderTests(unittest.TestCase):
             except ProviderError:
                 if self.ledger()[-1]['status'] == 'blocked':
                     break
-        self.assertEqual(len(calls), 11)
+        # Each unknown failure keeps ~$0.065 reserved: three fit in the $0.25 default.
+        self.assertEqual(len(calls), 3)
         charged = sum((module._charged(call) for call in self.ledger()), Decimal(0))
-        self.assertLessEqual(charged, Decimal(5))
-        self.assertIn('$5', self.ledger()[-1]['error'])
+        self.assertLessEqual(charged, Decimal('0.25'))
+        self.assertIn('$0.25', self.ledger()[-1]['error'])
         # A second provider still sees the same episode-wide spend.
         with self.assertRaises(ProviderError):
             self.call(self.provider('openai', lambda *args: self.fail('Budget exceeded')))
@@ -289,8 +296,8 @@ class ProviderTests(unittest.TestCase):
                 return 'blocked'
         with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
             statuses = list(executor.map(run, range(20)))
-        self.assertEqual(statuses.count('success'), 11)
-        self.assertLessEqual(sum(module._charged(call) for call in self.ledger()), Decimal(5))
+        self.assertEqual(statuses.count('success'), 3)
+        self.assertLessEqual(sum(module._charged(call) for call in self.ledger()), Decimal('0.25'))
         self.assertEqual(len({call['call_id'] for call in self.ledger()}), 20)
         self.assertEqual(list(self.directory.glob('.llm-usage-*.tmp')), [])
 
@@ -339,6 +346,239 @@ class ProviderTests(unittest.TestCase):
                 self.call(self.provider(transport=lambda *args: (200, raw)))
             self.assertEqual(self.ledger()[-1]['status'], 'failed')
             self.assertIsNone(self.ledger()[-1]['cost_usd'])
+
+    # ---- bounded independent provider budget ------------------------------------
+    def no_dispatch(self, name='anthropic'):
+        return self.provider(name, lambda *args: self.fail('Blocked call reached transport'))
+
+    def test_default_and_env_budget_configuration(self):
+        self.assertEqual((module.episode_budget_usd(), module.episode_token_budget()),
+                         (Decimal('0.25'), 30_000))
+        self.assertEqual((module.BUDGET_USD, module.TOKEN_BUDGET, module.CONTEXT_TOKENS),
+                         (Decimal('0.25'), 30_000, 128_000))
+        os.environ['FRAMEFOUNDRY_EPISODE_API_BUDGET_USD'] = '.5'
+        os.environ['FRAMEFOUNDRY_EPISODE_TOKEN_BUDGET'] = '1234'
+        self.assertEqual((module.episode_budget_usd(), module.episode_token_budget()),
+                         (Decimal('0.5'), 1234))
+
+    def test_invalid_or_nonfinite_budget_env_fails_closed(self):
+        os.environ['ANTHROPIC_API_KEY'] = 'secret-test-key'
+        for name, values in (('FRAMEFOUNDRY_EPISODE_API_BUDGET_USD',
+                              ('NaN', 'inf', '-1', '0', '', ' ', '1e1', 'abc', '5.01', '1_0', '١')),
+                             ('FRAMEFOUNDRY_EPISODE_TOKEN_BUDGET',
+                              ('0', '-1', '1.5', 'nan', '', 'abc', '1000001', '1e3'))):
+            for value in values:
+                with self.subTest(name=name, value=value):
+                    with patch.dict(os.environ, {name: value}):
+                        with self.assertRaises(ProviderError):
+                            LLMProvider.from_env()
+                        provider = LLMProvider('anthropic', 'k', 'claude-sonnet-4-5',
+                                               module.DEFAULT_RATES['claude-sonnet-4-5'],
+                                               transport=lambda *a: self.fail('dispatched'))
+                        with self.assertRaises(ProviderError):
+                            self.call(provider)
+        self.assertFalse((self.directory / 'llm-usage.json').exists())
+
+    def test_budget_exhaustion_is_blocked_before_transport_and_free(self):
+        os.environ['FRAMEFOUNDRY_EPISODE_API_BUDGET_USD'] = '0.01'
+        with self.assertRaises(module.ProviderBudgetError):
+            self.call(self.no_dispatch())
+        blocked = self.ledger()[-1]
+        self.assertEqual((blocked['status'], blocked['reserved_usd'],
+                          blocked['reserved_input_tokens'], blocked['reserved_output_tokens']),
+                         ('blocked', 0, 0, 0))
+        self.assertEqual(module._charged(blocked), 0)
+        self.assertEqual(module._charged_tokens(blocked), 0)
+        # Token budget too small is the same terminal budget class.
+        os.environ.pop('FRAMEFOUNDRY_EPISODE_API_BUDGET_USD')
+        os.environ['FRAMEFOUNDRY_EPISODE_TOKEN_BUDGET'] = '5000'
+        with self.assertRaisesRegex(module.ProviderBudgetError, 'token budget'):
+            self.call(self.no_dispatch())
+        self.assertTrue(issubclass(module.ProviderBudgetError, ProviderError))
+
+    def test_one_judge_and_two_planner_paid_calls_across_reruns_and_failures(self):
+        os.environ['FRAMEFOUNDRY_EPISODE_API_BUDGET_USD'] = '2'
+        os.environ['FRAMEFOUNDRY_EPISODE_TOKEN_BUDGET'] = '200000'
+        for role, allowed in (('planner', 2), ('judge', 1)):
+            directory = self.directory / role
+            dispatched = []
+            def transport(*args):
+                dispatched.append(1)
+                raise socket.timeout()      # failed attempts still consume the allowance
+            with self.assertRaises(ProviderError):     # blocked: invalid request, no allowance
+                self.call(self.provider(transport=transport), role=role, episode_dir=directory,
+                          prompt='a' * 60001)
+            for _ in range(allowed):                     # fresh provider each time == rerun
+                with self.assertRaises(ProviderError) as caught:
+                    self.call(self.provider(transport=transport), role=role, episode_dir=directory)
+                self.assertNotIsInstance(caught.exception, module.ProviderBudgetError)
+            with self.assertRaisesRegex(module.ProviderBudgetError, f'{role} paid-call cap'):
+                self.call(self.no_dispatch('openai'), role=role, episode_dir=directory)
+            self.assertEqual(len(dispatched), allowed)
+            rows = json.loads((directory / 'llm-usage.json').read_text())['calls']
+            self.assertEqual([r['status'] for r in rows],
+                             ['blocked'] + ['failed'] * allowed + ['blocked'])
+            # Other roles are unaffected by these caps.
+            self.call(self.provider(), role='pairwise', episode_dir=directory)
+
+    def test_failed_unknown_reservation_retains_tokens_and_cannot_be_cleared(self):
+        with self.assertRaises(ProviderError):
+            self.call(self.provider(transport=lambda *a: (500, b'{}')))
+        row = self.ledger()[-1]
+        self.assertEqual(row['status'], 'failed')
+        self.assertIsNone(row['input_tokens'])
+        reserved = row['reserved_input_tokens'] + row['reserved_output_tokens']
+        self.assertEqual(row['reserved_output_tokens'], 4096)
+        self.assertGreater(row['reserved_input_tokens'], module.PROTOCOL_OVERHEAD_TOKENS)
+        self.assertEqual(module._charged_tokens(row), reserved)
+        # A later successful call neither frees nor rewrites that failed row.
+        self.call(self.provider())
+        self.assertEqual(self.ledger()[0], row)
+        ledger = json.loads((self.directory / 'llm-usage.json').read_text())
+        self.assertEqual(ledger['budget_status'], 'ok')
+        self.assertEqual((ledger['version'], ledger['budget_usd'], ledger['token_budget']),
+                         (2, 0.25, 30000))
+        # A success with unknown usage also keeps its reservation.
+        self.call(self.provider(transport=lambda *a: (200, response(usage=False))))
+        self.assertEqual(module._charged_tokens(self.ledger()[-1]),
+                         self.ledger()[-1]['reserved_input_tokens'] + 4096)
+
+    def test_reported_overrun_is_persisted_then_terminal(self):
+        for case in ('input', 'output', 'cost'):
+            directory = self.directory / case
+            raw = json.loads(response())
+            kwargs = {}
+            if case == 'input':
+                raw['usage']['input_tokens'] = 20_000
+            elif case == 'output':
+                kwargs['max_output_tokens'] = 10
+            else:
+                raw['usage'].update(input_tokens=1000, output_tokens=4097)
+            with self.subTest(case=case):
+                with self.assertRaisesRegex(module.ProviderBudgetError, 'exceeded the reserved'):
+                    self.call(self.provider(transport=lambda *a: (200, json.dumps(raw).encode())),
+                              episode_dir=directory, **kwargs)
+                stored = json.loads((directory / 'llm-usage.json').read_text())
+                self.assertEqual(stored['budget_status'], 'overrun')
+                self.assertTrue(stored['calls'][0]['overrun'])
+                self.assertEqual(stored['calls'][0]['status'], 'success')
+                self.assertEqual(stored['calls'][0]['cost_status'], 'estimated')
+                with self.assertRaisesRegex(module.ProviderBudgetError, 'overrun'):
+                    self.call(self.no_dispatch(), episode_dir=directory)
+                # Observed overshoot is charged, never discounted to the reservation.
+                self.assertGreaterEqual(module._charged_tokens(stored['calls'][0]),
+                                        stored['calls'][0]['input_tokens']
+                                        + stored['calls'][0]['output_tokens'])
+
+    def test_request_specific_bounds_use_bytes_and_image_dimensions_not_base64(self):
+        image = self.directory / 'frame.jpg'
+        image.write_bytes(jpeg(640, 640))
+        system, prompt = 'é' * 10, '☃' * 10          # multibyte: bytes, not characters
+        instruction = '\nReturn only a valid JSON object. Do not use Markdown or tools.'
+        text = len((system + prompt + instruction).encode('utf-8'))
+        for name, per_image in (('anthropic', 684), ('openai', 957)):   # +25% over formulas
+            with self.subTest(provider=name):
+                directory = self.directory / name
+                self.call(self.provider(name), system=system, prompt=prompt, images=[image],
+                          episode_dir=directory)
+                row = json.loads((directory / 'llm-usage.json').read_text())['calls'][0]
+                self.assertEqual(row['reserved_input_tokens'],
+                                 text + module.PROTOCOL_OVERHEAD_TOKENS + per_image)
+                self.assertEqual(row['reserved_output_tokens'], 4096)
+                self.assertLess(row['reserved_input_tokens'], 3000)   # nowhere near 128k
+        # Non-default model: formula unknown, so the flat 4000 ceiling applies.
+        os.environ.update(ANTHROPIC_API_KEY='secret-test-key', FRAMEFOUNDRY_LLM_PROVIDER='anthropic')
+        os.environ['FRAMEFOUNDRY_LLM_MODEL'] = 'custom'
+        os.environ['FRAMEFOUNDRY_INPUT_USD_PER_MILLION'] = '3'
+        os.environ['FRAMEFOUNDRY_OUTPUT_USD_PER_MILLION'] = '15'
+        custom = LLMProvider.from_env()
+        custom._transport = lambda *a: (200, response())
+        self.call(custom, images=[image], episode_dir=self.directory / 'custom')
+        row = json.loads((self.directory / 'custom' / 'llm-usage.json').read_text())['calls'][0]
+        self.assertGreaterEqual(row['reserved_input_tokens'], 4000)
+
+    def test_many_full_size_images_blocked_by_default_but_one_tiled_sheet_fits(self):
+        image = self.directory / 'frame.jpg'
+        image.write_bytes(jpeg(640, 640))
+        for count in (78, 8):
+            with self.subTest(images=count):
+                os.environ.update(ANTHROPIC_API_KEY='secret-test-key', FRAMEFOUNDRY_LLM_PROVIDER='anthropic')
+                os.environ['FRAMEFOUNDRY_LLM_MODEL'] = 'custom'   # flat 4000 per image
+                os.environ['FRAMEFOUNDRY_INPUT_USD_PER_MILLION'] = '3'
+                os.environ['FRAMEFOUNDRY_OUTPUT_USD_PER_MILLION'] = '15'
+                provider = LLMProvider.from_env()
+                provider._transport = lambda *a: self.fail('Oversized image payload dispatched')
+                with self.assertRaises(ProviderError):
+                    self.call(provider, images=[image] * count, episode_dir=self.directory / 'x')
+        os.environ.pop('FRAMEFOUNDRY_LLM_MODEL')
+        os.environ.pop('FRAMEFOUNDRY_INPUT_USD_PER_MILLION')
+        os.environ.pop('FRAMEFOUNDRY_OUTPUT_USD_PER_MILLION')
+        with self.assertRaises(module.ProviderBudgetError):      # 78 x 684 > 30000 tokens
+            self.call(self.no_dispatch(), images=[image] * 78, episode_dir=self.directory / 'y')
+        self.assertEqual(self.call(self.provider(), images=[image],
+                                   episode_dir=self.directory / 'z').data, {'ok': True})
+
+    def test_budget_is_per_episode_root_and_shared_by_providers(self):
+        roots = [self.directory / 'a', self.directory / 'b']
+        for root in roots:
+            for name in ('anthropic', 'openai', 'anthropic', 'anthropic'):
+                with self.assertRaises(ProviderError):
+                    self.call(self.provider(name, lambda *a: (500, b'{}')), episode_dir=root)
+            with self.assertRaises(module.ProviderBudgetError):
+                self.call(self.no_dispatch(), episode_dir=root)
+        for root in roots:
+            self.assertEqual([c['status'] for c in json.loads(
+                (root / 'llm-usage.json').read_text())['calls']], ['failed'] * 4 + ['blocked'])
+
+    def test_legacy_ledger_is_charged_conservatively(self):
+        legacy = {'version': 1, 'budget_usd': 5, 'calls': [
+            {'call_id': 'old', 'role': 'worker', 'status': 'failed', 'reserved_usd': 0.01,
+             'cost_usd': None, 'input_tokens': None, 'output_tokens': None}]}
+        (self.directory / 'llm-usage.json').write_text(json.dumps(legacy))
+        self.assertEqual(module._charged_tokens(legacy['calls'][0]), module.CONTEXT_TOKENS)
+        with self.assertRaisesRegex(module.ProviderBudgetError, 'token budget'):
+            self.call(self.no_dispatch())
+
+    def test_new_ledger_fields_are_validated_when_present(self):
+        good = {'call_id': 'c', 'role': 'worker', 'status': 'failed', 'reserved_usd': 0.01,
+                'cost_usd': None, 'reserved_input_tokens': 5, 'reserved_output_tokens': 5}
+        path = self.directory / 'llm-usage.json'
+        path.write_text(json.dumps({'calls': [good], 'budget_status': 'ok'}))
+        self.assertEqual(len(module._load_ledger(path)['calls']), 1)
+        bad_rows = [dict(good, reserved_input_tokens=-1), dict(good, reserved_output_tokens=True),
+                    dict(good, reserved_input_tokens=1.5), dict(good, reserved_input_tokens='5'),
+                    dict(good, input_tokens=-3), dict(good, overrun='yes'), dict(good, role=7),
+                    dict(good, reserved_usd=True)]
+        for row in bad_rows:
+            with self.subTest(row=row):
+                path.write_text(json.dumps({'calls': [row]}))
+                with self.assertRaisesRegex(ProviderError, 'ledger is invalid'):
+                    module._load_ledger(path)
+        path.write_text(json.dumps({'calls': [good], 'budget_status': 'weird'}))
+        with self.assertRaisesRegex(ProviderError, 'ledger is invalid'):
+            module._load_ledger(path)
+
+    def test_known_tts_charges_share_the_episode_budget(self):
+        tts = self.directory / 'tts-usage.json'
+        tts.write_text(json.dumps({'calls': [{'status': 'success', 'cost_usd': 0.2}]}))
+        with self.assertRaisesRegex(module.ProviderBudgetError, 'budget would exceed'):
+            self.call(self.no_dispatch())
+        tts.write_text('broken')
+        with self.assertRaisesRegex(ProviderError, 'TTS usage ledger is invalid'):
+            self.call(self.no_dispatch())
+
+    def test_credentials_and_budget_come_from_environment_only(self):
+        cwd = os.getcwd()
+        self.addCleanup(os.chdir, cwd)
+        os.chdir(self.directory)
+        for name in ('.env', 'anthropic_api_key', 'openai_api_key', 'budget.json'):
+            (self.directory / name).write_text('ANTHROPIC_API_KEY=file-key\nOPENAI_API_KEY=file-key\n'
+                                               'FRAMEFOUNDRY_EPISODE_API_BUDGET_USD=4\n')
+        self.assertIsNone(LLMProvider.from_env())
+        self.assertEqual(module.episode_budget_usd(), Decimal('0.25'))
+        provider = self.provider()
+        self.call(provider)
+        self.assertNotIn('secret-test-key', (self.directory / 'llm-usage.json').read_text())
 
     def test_transport_disables_redirects_and_captures_http_errors(self):
         self.assertIsNone(module._NoRedirect().redirect_request(None, None, 302, '', {}, 'https://other'))
