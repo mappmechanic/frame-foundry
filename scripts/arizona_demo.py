@@ -3,6 +3,7 @@
 No API key loading or fixture substitution. Real ASR defaults to local WhisperX
 with an OpenAI word-timestamp fallback when OPENAI_API_KEY is configured.
 --visual-only remains explicit no-ASR diagnostic mode; it never passes word QA.
+ASR, Planner and judge share a $0.10 cap; stricter configured limits are retained.
 """
 import argparse
 from decimal import Decimal
