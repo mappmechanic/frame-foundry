@@ -56,7 +56,8 @@ def _image_info(path):
                 for x in range(8):
                     bits = (bits << 1) | (hashed[y * 9 + x] > hashed[y * 9 + x + 1])
             return dict(sharpness=round(sharpness, 3), exposure=round(exposure, 3),
-                        frame_hash=f'{bits:016x}', pixels=tuple(small.getdata()))
+                        frame_hash=hashlib.sha256(str(gray.size).encode() + gray.tobytes()).hexdigest(),
+                        dhash=f'{bits:016x}', pixels=tuple(small.getdata()))
     except (OSError, ValueError, Image.DecompressionBombError):
         return None
 
@@ -72,7 +73,7 @@ def _stability(first, second):
 
 
 def _near(first, second):
-    distance = (int(first['frame_hash'], 16) ^ int(second['frame_hash'], 16)).bit_count()
+    distance = (int(first['dhash'], 16) ^ int(second['dhash'], 16)).bit_count()
     # Luma distance prevents uniform white/black dHash collisions from merging.
     luma_distance = sum(abs(a - b) for a, b in
                         zip(first['pixels'], second['pixels'])) / 1024
@@ -139,6 +140,8 @@ def _base_score(candidate):
 def extract_candidates(analysis: dict, episode_dir: Path, *, window_ms: int = MAX_WINDOW_MS) -> list[dict]:
     """Extract scene-split, source-bounded evidence windows of at most 10 seconds.
 
+    ``frame_hash`` is a grayscale pixel SHA-256 (not collision-prone dHash);
+    canonical_frame_* pointers identify near-image groups for preview reuse.
     Optional ``audio_metrics`` is a source-ID map of analyze_audio results. With
     no cached entry, a local proxy is decoded once per audio source. Extra fields
     include canonical image reuse, source provenance and honest quality methods.
@@ -295,5 +298,6 @@ def rank_candidates(candidates: list[dict], goal: str, *, top_n: int = 8) -> lis
 def compact_candidates(candidates: list[dict]) -> list[dict]:
     """Keep the required planner evidence and canonical preview reuse pointers."""
     keys = ('candidate_id', 'source_id', 'start_ms', 'end_ms', 'transcript_snippet', 'quality',
-            'audio', 'frame_path', 'frame_hash', 'pre_rank', 'canonical_frame_path', 'canonical_frame_hash')
+            'audio', 'frame_path', 'frame_hash', 'pre_rank', 'canonical_frame_path', 'canonical_frame_hash',
+            'quality_method', 'frame_time_ms', 'frame_in_window')
     return [{key: c[key] for key in keys if key in c} for c in candidates]

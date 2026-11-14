@@ -73,6 +73,8 @@ def test_frame_selection_in_window_first_and_nearest_source_labeled(tmp_path):
     short = source(duration=5000, frames=[dict(path='early.png', source_time_ms=4500)])
     nearest = extract_candidates(dict(sources=[short]), tmp_path, window_ms=2000)
     assert nearest[0]['frame_time_ms'] == 4500
+    assert nearest[0]['frame_in_window'] is False
+    assert nearest[-1]['frame_in_window'] is True
 
 
 def test_sharpness_exposure_and_honest_stability_surrogate(tmp_path):
@@ -103,7 +105,11 @@ def test_equal_near_images_reuse_but_preserve_transcript_moments(tmp_path):
     assert candidates[0]['candidate_id'] != candidates[1]['candidate_id']
     picture(tmp_path, 'black.png', 'black')
     picture(tmp_path, 'white.png', 'white')
-    assert not module._near(module._image_info(tmp_path / 'black.png'), module._image_info(tmp_path / 'white.png'))
+    black = module._image_info(tmp_path / 'black.png')
+    white = module._image_info(tmp_path / 'white.png')
+    assert black['dhash'] == white['dhash']  # dHash collision is NOT an identity key.
+    assert black['frame_hash'] != white['frame_hash']
+    assert not module._near(black, white)
 
 
 def test_actual_identical_sources_only_dedupe_identical_moments_with_provenance(tmp_path):
@@ -193,3 +199,21 @@ def test_unsafe_corrupt_unlabeled_and_foreign_frames_are_not_used(tmp_path):
     result = extract_candidates(dict(sources=[source(frames=frames), foreign]), tmp_path)
     assert all(c['frame_path'] is None for c in result if c['source_id'] == 's1')
     assert any(c['frame_path'] == 'valid.png' for c in result if c['source_id'] == 's2')
+
+
+def test_nonfinite_metric_scores_are_sanitized(tmp_path):
+    analysis = dict(sources=[source()], audio_metrics={'s1': dict(rms=float('inf'), method='energy_only')})
+    c = extract_candidates(analysis, tmp_path)[0]
+    c['quality']['visual_score'] = float('nan')
+    c['audio']['speech_fraction'] = float('inf')
+    assert rank_candidates([c], 'trip')[0]['pre_rank'] == 0
+    assert c['audio']['rms'] == 0
+
+
+def test_sparse_scene_gaps_overlaps_and_source_clamping(tmp_path):
+    scenes = [dict(source_id='s1', start_ms=-500, end_ms=3000),
+              dict(source_id='s1', start_ms=2000, end_ms=5000),
+              dict(source_id='s1', start_ms=9000, end_ms=50000)]
+    result = extract_candidates(dict(sources=[source(duration=10000)], scenes=scenes), tmp_path)
+    assert [(c['start_ms'], c['end_ms']) for c in result] == [(0, 2000), (2000, 3000),
+                                                          (3000, 5000), (9000, 10000)]
