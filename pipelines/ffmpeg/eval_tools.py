@@ -195,9 +195,9 @@ def cohen_kappa(pairs):
     b = sum(1 for _, y in pairs if y)
     po = sum(1 for x, y in pairs if x == y) / n
     pe = (a / n) * (b / n) + (1 - a / n) * (1 - b / n)
-    if math.isclose(pe, 1.0):
-        return None, 'degenerate sample: one or both raters are constant, kappa undefined'
-    return round((po - pe) / (1 - pe), 6), None
+    if a in (0, n) or b in (0, n) or math.isclose(pe, 1.0):
+        return None, 'degenerate sample: one or both raters are constant, kappa is uninformative'
+    return round((po - pe) / (1 - pe), 6) + 0.0, None
 
 
 def judge_mean(report):
@@ -653,7 +653,7 @@ def pairwise_compare(dir_a, dir_b, *, provider, evals_root=None, pair_id=None, p
     result = dict(status='compared', pair_id=pair_id, created_at=_now(), a=reports['A']['episode_id'],
                   b=reports['B']['episode_id'], a_render_hash=reports['A']['render_hash'],
                   b_render_hash=reports['B']['render_hash'], goal=reports['A']['goal'], verdict=verdict,
-                  outcomes=outcomes, ledger_dir=str(ledger),
+                  winner_episode=reports[verdict]['episode_id'] if verdict in ('A', 'B') else None, outcomes=outcomes, ledger_dir=str(ledger),
                   note='Verdict "inconsistent" means the preference flipped with presentation order (position '
                        'bias); treat as no preference. Calls are in an isolated ledger, not in either episode ledger.')
     if persist:
