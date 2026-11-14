@@ -132,7 +132,7 @@ def build_timeline(spec: dict, analysis: dict) -> tuple[otio.schema.Timeline, di
             a, b = min(a, word_start), max(b, word_end)
         segment['render_start_ms'], segment['render_end_ms'] = a, b
         previous = groups[-1] if groups else None
-        if (previous and previous['source_id'] == sid
+        if (not spec.get('editing_policy') and previous and previous['source_id'] == sid
                 and segment['raw_start_ms'] >= previous['selections'][-1]['raw_end_ms']
                 and a <= previous['end_ms']):
             previous['end_ms'] = max(previous['end_ms'], b)
@@ -188,6 +188,8 @@ def assemble(ctx: EpisodeContext, spec: dict, analysis: dict, *, attempt: int = 
         raise StageError('PLAN_INVALID', 'assembler', 'Plan identity differs from context')
     from .disk_safety import require_free_disk
     require_free_disk(ctx.episode_dir,stage='assembler')
+    from .production import apply
+    spec=apply(ctx,spec,analysis)
     timeline, amended = build_timeline(spec, analysis)
     from .overlays import compile_cards,burn,preflight
     if spec.get('overlays'):preflight()
@@ -211,6 +213,16 @@ def assemble(ctx: EpisodeContext, spec: dict, analysis: dict, *, attempt: int = 
     if amended.get('overlays'):
         overlaid=directory/'overlaid.mp4'
         burn(candidate_path,overlaid,amended['overlays']);overlaid.replace(candidate_path)
+        atomic_write_json(spec_path,amended)
+    if amended.get('editing_policy'):
+        from .audio_policy import apply_audio_policy
+        from .production import dialogue_intervals
+        mixed=directory/'policy-audio.mp4'
+        amended['editing_policy']['audio']=apply_audio_policy(candidate_path,mixed,music_path=getattr(ctx,'music_bed',None),authorized=getattr(ctx,'music_authorized',False),dialogue_intervals=dialogue_intervals(saved,analysis,amended))
+        mixed.replace(candidate_path)
+        if amended.get('overlays'):
+            from .overlays import filehash
+            amended['overlays']['render_sha256']=filehash(candidate_path)
         atomic_write_json(spec_path,amended)
     if abs(metadata['duration_ms'] - amended['target_duration_ms']) > 1000:
         limitation = (f'Rendered duration {metadata["duration_ms"]}ms is outside '

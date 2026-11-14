@@ -11,7 +11,7 @@ from pipelines.ffmpeg.qa_validator import validate_candidate
 from pipelines.ffmpeg.evaluator import evaluate_episode,persist_report,footage_fingerprint
 
 
-def rerender(source,episodes_root,episode_id,*,evals_root=None,judge=False):
+def rerender(source,episodes_root,episode_id,*,evals_root=None,judge=False,production=False,music_bed=None,music_authorized=False):
     source=Path(source).resolve();root=resolve_episode(episodes_root,episode_id)
     if root.exists():raise StageError('EPISODE_EXISTS','assembler','Use a fresh re-render Episode identity')
     analysis=read_json(source/'analysis.json');spec=read_json(source/'narrative-spec.json')
@@ -22,7 +22,7 @@ def rerender(source,episodes_root,episode_id,*,evals_root=None,judge=False):
     from pipelines.ffmpeg.disk_safety import require_free_disk
     require_free_disk(Path(episodes_root),stage='assembler')
     root.mkdir(parents=True)
-    ctx=EpisodeContext(episode_id,root,spec['goal'],fixture_mode=read_json(source/'qa-report.json').get('fixture_mode',False),target_seconds=spec['target_duration_ms']/1000,aspect_override=spec['aspect_ratio'],overlay_mode=True)
+    ctx=EpisodeContext(episode_id,root,spec['goal'],production=production,music_bed=Path(music_bed) if music_bed else None,music_authorized=music_authorized,fixture_mode=read_json(source/'qa-report.json').get('fixture_mode',False),target_seconds=spec['target_duration_ms']/1000,aspect_override=spec['aspect_ratio'],overlay_mode=True)
     try:
         # Keep literal source/word/frame evidence and saved intro, not old usage/J/Q.
         for name in ('frames','proxies'):
@@ -75,11 +75,14 @@ def main(argv=None):
     p.add_argument('--episodes-root',type=Path,default=Path(__file__).resolve().parents[1]/'episodes')
     p.add_argument('--evals-root',type=Path)
     p.add_argument('--episode',default='az-sedona-legible-'+datetime.now(timezone.utc).strftime('%H%M%S'))
+    p.add_argument('--production',action='store_true')
+    p.add_argument('--music-bed',type=Path)
+    p.add_argument('--music-authorized',action='store_true')
     p.add_argument('--judge',action='store_true',help='Opt into one fresh Judge request; old J/Q are never reused')
     args=p.parse_args(argv)
     try:
         source=resolve_episode(args.episodes_root,args.from_episode)
-        root,qa=rerender(source,args.episodes_root,args.episode,evals_root=args.evals_root,judge=args.judge)
+        root,qa=rerender(source,args.episodes_root,args.episode,evals_root=args.evals_root,judge=args.judge,production=args.production,music_bed=args.music_bed,music_authorized=args.music_authorized)
     except (StageError,OSError,ValueError) as error:print(str(error),file=sys.stderr);return 2
     print('Run id: '+root.name+'; Planner/ASR/TTS calls: 0; QA '+('PASS' if qa['passed'] else 'FAIL'))
     return 0 if qa['passed'] else 1

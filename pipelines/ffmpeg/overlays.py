@@ -60,7 +60,7 @@ def font_path():
         if path and Path(path).is_file():return Path(path)
     raise StageError('OVERLAY_FONT','assembler','No bold sans font; set FRAMEFOUNDRY_OVERLAY_FONT')
 
-def layout(text,width,height,position='top'):
+def layout(text,width,height,position='top',production=False):
     # Never shrink cap height to fit width: use a bold condensed raster instead.
     text=clean(text);text=text if len(text)<=42 else text[:41]+'…';path=font_path();size=max(24,round(height*.06))
     while ImageFont.truetype(str(path),size).getbbox('H')[3]-ImageFont.truetype(str(path),size).getbbox('H')[1]<math.ceil(height*.06):size+=1
@@ -78,14 +78,14 @@ def layout(text,width,height,position='top'):
     if any(not c.isspace() and bytes(font.getmask(c))==missing for c in '\n'.join(lines)):
         raise StageError('OVERLAY_GLYPH','assembler','Configured font cannot render the overlay text')
     natural=math.ceil(max(font.getlength(line) for line in lines))
-    padding=32;tw=min(natural,math.floor(width*.88)-2*padding)
+    padding=32;tw=min(natural,math.floor(width*(.80 if production and height>width else .80 if production else .88))-2*padding)
     if tw/natural<.4:
         if len(text)<4:raise StageError('OVERLAY_FIT','assembler','Text cannot fit a legible card')
-        return layout(text[:-2]+'…',width,height)
+        return layout(text[:-2]+'…',width,height,production=production)
     heights=[font.getbbox(line)[3]-font.getbbox(line)[1] for line in lines]
     th=sum(heights)+20*(len(lines)-1)+2*padding
     if th+8>math.floor(height/3)-math.ceil(height*.12):raise StageError('OVERLAY_FIT','assembler','Large text does not fit the upper-third safe area')
-    return dict(text='\n'.join(lines),x=(width-tw-2*padding)//2,y=math.ceil(height*.12),
+    return dict(text='\n'.join(lines),x=math.floor((width*(.90 if production and height>width else 1)-tw-2*padding)/2),y=math.ceil(height*.12),
         width=tw+2*padding,height=th,fontsize=size,position='top',
         cap_height=font.getbbox('H')[3]-font.getbbox('H')[1],pill_opacity=.6,padding=padding)
 
@@ -152,6 +152,8 @@ def compile_cards(spec,analysis,timeline,root):
     old_omissions={n for n in spec['overlays'].get('limitations',[]) if n.startswith('Requested section ') and ' omitted:' in n}
     spec=copy.deepcopy(spec);spec['overlays']=plan
     spec['coverage']['limitations']=[n for n in spec['coverage']['limitations'] if n not in old_omissions]
+    production=spec.get('editing_policy',{}).get('mode')=='production-v1'
+    if production:plan['production']=True
     clips=list(timeline.tracks[0]);w,h=(1080,1920) if spec['aspect_ratio']=='9:16' else (1920,1080)
     starts=[];cursor=0
     for c in clips:starts.append((cursor,output_frames(c.source_range.duration.to_seconds())));cursor+=starts[-1][1]
@@ -177,7 +179,14 @@ def compile_cards(spec,analysis,timeline,root):
             hidden=clear_frames(first,end)
             if readable_frames(first,end,hidden)>=75:break
         else:return False
-        card=layout(text,w,h)
+        card=layout(text,w,h,production=production)
+        if production:
+            source=next(s for s in analysis['sources'] if s['source_id']==clips[index].metadata['source_id'])
+            at=(clips[index].source_range.start_time.to_seconds()+clips[index].source_range.duration.to_seconds()/2)*1000
+            boxes=face_boxes(source['path'],at,w,h)
+            collision=bool(boxes and any(intersects((card['x'],card['y'],card['width'],card['height']),box) for box in boxes))
+            spec['editing_policy']['visual'].append(dict(shot_id=f'shot-{index+1:02d}',status='sampled' if boxes is not None else 'unavailable',boxes=boxes or [],collision=collision))
+            if boxes is None:spec['editing_policy']['limitations'].append('Subject geometry unavailable; no verified face/eye tracking claim')
         if clean(card['text'])!=clean(text):plan['limitations'].append('Overlay text shortened to keep the required large two-line cap height')
         card.update(kind=kind,shot_id=f'shot-{index+1:02d}',start_frame=first,end_frame=end,evidence=proof,cut_frames=hidden)
         plan['cards'].append(card);occupied.append((first,end))
@@ -248,6 +257,11 @@ def burn(video,output,plan):
             a=s-1e-6;b=(c['end_frame']-1)/30+1e-6
             filters.append(f'[{i+1}:v:0]format=rgba,setpts=PTS-STARTPTS,fade=t=in:st={s}:d=0.25:alpha=1,fade=t=out:st={e-.25}:d=0.25:alpha=1[card{i}]')
             y=f'{c["y"]}+8*(1-min(1,max(0,(t-{s})/.25)))'
+            if plan.get('production'):
+                #14/120/1 damped spring normalized at250ms; steady hold stays fixed.
+                q=f'min(.25,max(0,t-{s}))'
+                spring=f'(1-exp(-7*({q}))*(cos(8.426149773*({q}))+.830747161*sin(8.426149773*({q}))))/.964636'
+                y=f'{c["y"]}+8*(1-min(1,max(0,{spring})))'
             enabled=f'between(t,{a},{b})'+''.join(f'*not(between(t,{(n-.25)/30},{(n+.25)/30}))' for n in c.get('cut_frames',[]))
             filters.append(f"[{last}][card{i}]overlay=x={c['x']}:y='{y}':enable='{enabled}':shortest=1:eof_action=pass[v{i}]")
             last=f'v{i}'
@@ -269,7 +283,7 @@ def verify(spec,video,cuts,duration_ms):
         results['overlay_cut_clearance'] &= all(frame in c.get('cut_frames',[]) for cut in cuts for frame in (round(cut*30/1000)-1,round(cut*30/1000),round(cut*30/1000)+1) if c['start_frame']<=frame<c['end_frame'])
         luminance=((1-c.get('pill_opacity',0)+.055)/1.055)**2.4
         results['overlay_legibility'] &= c.get('cap_height',0)>=.05*h and .55<=c.get('pill_opacity',0)<=.65 and 1.05/(luminance+.05)>=4.5
-        expected=layout(c['text'],w,h,c['position'])
+        expected=layout(c['text'],w,h,c['position'],production=plan.get('production',False))
         results['overlay_render_binding'] &= all(c.get(k)==expected[k] for k in ('text','x','y','width','height','fontsize','position','cap_height','pill_opacity','padding'))
     results['overlay_render_binding'] &= (plan['render_sha256']==filehash(video) and plan['style_sha256']==filehash(STYLE)
         and plan['font_sha256']==filehash(font_path()) and plan['plan_sha256']==digest({k:v for k,v in plan.items() if k not in ('render_sha256','plan_sha256')}))

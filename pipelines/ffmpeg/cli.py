@@ -38,7 +38,8 @@ def _judge_repair_fix(evaluation):
     return fix.strip()[:160] if weak else None
 
 
-def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixture=None,provider='env',visual_only=False,evals_root=None,eval_labels=None,planner_retry=True,asr_provider='auto',voiceover=False,repair_from=None,target_seconds=None,aspect=None,keep_work=False,overlays=None,sections=None,decider='llm',memory=False,memory_backend='auto',memory_root=None,reuse_history=True):
+def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixture=None,provider='env',visual_only=False,evals_root=None,eval_labels=None,planner_retry=True,asr_provider='auto',voiceover=False,repair_from=None,target_seconds=None,aspect=None,keep_work=False,overlays=None,sections=None,decider='llm',memory=False,memory_backend='auto',memory_root=None,reuse_history=True,production=False,music_bed=None,music_authorized=False):
+    if music_bed is not None and (not production or not music_authorized):raise StageError('MUSIC_AUTHORIZATION','assembler','Music requires --production and --music-authorized')
     if memory_backend not in ('auto','local','hydra','hydradb'):raise StageError('MEMORY_INVALID','planner','Unsupported memory backend')
     if decider not in ('llm','heuristic','decisions'):raise StageError('DECIDER_INVALID','planner','Unsupported decider')
     if visual_only and transcript_fixture is not None:raise StageError('INPUT_CONFLICT','refinery','Choose visual-only or a transcript fixture, not both')
@@ -55,7 +56,7 @@ def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixt
     with episode_lock(root):
         directory=resolve_episode(root,episode_id)
         if directory.exists():raise StageError('EPISODE_EXISTS','refinery','Episode identity already exists')
-        directory.mkdir();ctx=EpisodeContext(episode_id,directory,goal,memory_enabled=memory,memory_backend='hydradb' if memory_backend=='hydra' else memory_backend,memory_root=Path(memory_root) if memory_root else None,decider_mode=decider,fixture_mode=transcript_fixture is not None,target_seconds=target_seconds,aspect_override=aspect,overlay_mode=overlays,overlay_sections=list(sections or []));attempts=[]
+        directory.mkdir();ctx=EpisodeContext(episode_id,directory,goal,production=production,music_bed=Path(music_bed) if music_bed else None,music_authorized=music_authorized,memory_enabled=memory,memory_backend='hydradb' if memory_backend=='hydra' else memory_backend,memory_root=Path(memory_root) if memory_root else None,decider_mode=decider,fixture_mode=transcript_fixture is not None,target_seconds=target_seconds,aspect_override=aspect,overlay_mode=overlays,overlay_sections=list(sections or []));attempts=[]
         save_state(ctx,'accepted');report=None;evaluation=None;active_provider=None;planning_retried=False;first_eval_passed=None;last_result=None;next_changes=[]
         try:
             if voiceover:
@@ -234,6 +235,9 @@ def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixt
 
 def _run_main(argv=None):
     p=argparse.ArgumentParser();p.add_argument('--footage-dir',required=True,type=Path);p.add_argument('--goal',required=True);p.add_argument('--episode');p.add_argument('--episodes-root',type=Path,default=Path(__file__).resolve().parents[2]/'episodes');p.add_argument('--transcript-fixture',type=Path)
+    p.add_argument('--production',action='store_true',help='Opt into source-preserving production editorial/audio/visual policy')
+    p.add_argument('--music-bed',type=Path,help='Local authorized music; never fetched automatically')
+    p.add_argument('--music-authorized',action='store_true',help='Attest permission to use supplied music')
     p.add_argument('--memory',action='store_true',help='Explicit local-first historical edit memory (default off)')
     p.add_argument('--memory-backend',choices=['auto','local','hydra'],default='auto')
     p.add_argument('--memory-root',type=Path,help='Private lesson directory')
@@ -252,7 +256,7 @@ def _run_main(argv=None):
     def terminate(signum,frame):raise KeyboardInterrupt()
     old=signal.signal(signal.SIGTERM,terminate)
     try:
-        report=run_episode(args.footage_dir,args.goal,episodes_root=args.episodes_root,episode_id=args.episode,transcript_fixture=args.transcript_fixture,visual_only=args.visual_only,evals_root=args.evals_root,eval_labels=args.eval_labels,planner_retry=not args.no_planner_retry,asr_provider=args.asr_provider,voiceover=args.voiceover,repair_from=args.repair_from,target_seconds=args.duration_seconds,aspect=args.aspect,keep_work=args.keep_work,overlays=args.overlays,sections=args.section,decider=args.decider,memory=args.memory,memory_backend=args.memory_backend,memory_root=args.memory_root)
+        report=run_episode(args.footage_dir,args.goal,episodes_root=args.episodes_root,episode_id=args.episode,transcript_fixture=args.transcript_fixture,visual_only=args.visual_only,evals_root=args.evals_root,eval_labels=args.eval_labels,planner_retry=not args.no_planner_retry,asr_provider=args.asr_provider,voiceover=args.voiceover,repair_from=args.repair_from,target_seconds=args.duration_seconds,aspect=args.aspect,keep_work=args.keep_work,overlays=args.overlays,sections=args.section,decider=args.decider,memory=args.memory,memory_backend=args.memory_backend,memory_root=args.memory_root,production=args.production,music_bed=args.music_bed,music_authorized=args.music_authorized)
         evaluation_path=Path(args.episodes_root)/report['episode_id']/'eval-report.json'
         evaluation=read_json(evaluation_path) if evaluation_path.is_file() else None
         metrics=dict(Q=evaluation['scores']['Q'],J=evaluation['scores']['J'],D=evaluation['scores']['D'],G=evaluation['scores']['G'],quality_per_dollar=evaluation['model_cost']['quality_per_dollar']) if evaluation else dict(Q=None,J=None,D=None,G=None,quality_per_dollar=None)

@@ -25,6 +25,9 @@ class EpisodeContext:
     memory_selection: dict | None = None
     overlay_mode: bool | None = None
     overlay_sections: list[str] = field(default_factory=list)
+    production: bool = False
+    music_bed: Path | None = None
+    music_authorized: bool = False
 
 class StageError(RuntimeError):
     def __init__(self, code, stage, message, source_id=None, repairable=False):

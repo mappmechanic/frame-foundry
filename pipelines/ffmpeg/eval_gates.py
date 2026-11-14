@@ -476,8 +476,12 @@ def run_gates(episode_dir):
             overlay_checks=verify(spec,Path(ctx['render_path']),[s['timeline_start_ms'] for s in shots[1:]],render['duration_ms'])
         except Exception:overlay_checks=[dict(name='overlay_render_binding',status='fail',reason='Overlay verification unavailable')]
         for c in overlay_checks:checks[c['name']]=check(c['name'],c['status'],c['reason'])
+    if spec and spec.get('editing_policy'):
+        from .production import verify as verify_policy
+        for c in verify_policy(spec,{},root=root):checks[c['name']]=check(c['name'],c['status'],c['reason'])
     ordered = [checks[name] for name in CHECK_NAMES]
     ordered.extend(c for n,c in checks.items() if n.startswith('overlay_'))
+    ordered.extend(c for n,c in checks.items() if n.startswith('policy_'))
     if 'voiceover_integrity' in checks:ordered.append(checks['voiceover_integrity'])
     return dict(passed=all(c['status'] == 'pass' for c in ordered), checks=ordered, context=ctx,
                 limitations=limitations)
