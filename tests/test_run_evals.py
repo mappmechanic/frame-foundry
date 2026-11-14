@@ -68,7 +68,11 @@ def test_judge_driven_changed_cut_does_not_reuse_score(footage,tmp_path):
     assert len(qa['attempts'])==2
 
 
-def test_gate_driven_retry_preserves_single_remaining_judge(footage,tmp_path):
+def test_gate_driven_retry_preserves_single_remaining_judge(footage,tmp_path,monkeypatch):
+    # Disable local completion to seed the old real undersized-render defect;
+    # default completion is separately covered and now avoids this paid retry.
+    from pipelines.ffmpeg import teaser_edit
+    monkeypatch.setattr(teaser_edit,'enabled',lambda analysis:False)
     path,fixture=footage;p,calls=provider_transport(short_initial=True)
     qa=run_episode(path,'Create a 10 second family-trip teaser',episodes_root=tmp_path/'episodes',episode_id='gate-retry',transcript_fixture=fixture,provider=p,evals_root=tmp_path/'evals')
     assert qa['passed'],qa

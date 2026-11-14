@@ -266,6 +266,8 @@ def _check_candidate_mapping(data,rows):
     for segment in data.get('segments',[]):
         if not any(c['source_id']==segment.get('source_id') and c['start_ms']<=segment.get('raw_start_ms',-1)<segment.get('raw_end_ms',-1)<=c['end_ms'] for c in rows):
             raise ValueError('Planner interval not mapped wholly to supplied candidate')
+        if segment.get('semantic_labels') and not any(c.get('frame_in_window') and 'tile_index' in c and c['source_id']==segment['source_id'] and c['start_ms']<=segment['raw_start_ms']<segment['raw_end_ms']<=c['end_ms'] for c in rows):
+            raise ValueError('Semantic labels lack in-window image evidence')
 
 
 def _transcript(words, sources, segments=None, limit=18000):

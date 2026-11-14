@@ -135,12 +135,12 @@ def test_retry_opt_out_still_applies_to_low_score(media, tmp_path):
     assert len(report['attempts']) == 1 and evaluation['scores']['J'] == 0.5
 
 
-def test_deterministic_duration_gate_still_gets_one_repair(media, tmp_path):
+def test_short_response_is_completed_without_paid_duration_repair(media, tmp_path):
     provider, calls = offline_provider({c: 4 for c in CRITERIA}, short_initial=True)
     report, evaluation, _ = run(media, tmp_path, provider)
-    assert [role for role, _ in calls] == ['planner', 'planner', 'judge']
-    assert 'duration_target' in calls[1][1]['fix_instruction']
-    assert len(report['attempts']) == 2 and evaluation['first_try_passed'] is False
+    assert [role for role, _ in calls] == ['planner', 'judge']
+    assert len(report['attempts']) == 1 and evaluation['first_try_passed'] is True
+    assert abs(report['actual_duration_ms']-report['target_duration_ms'])<=100
 
 
 @pytest.mark.parametrize('status,j,opening,verdict,fix,expected', [

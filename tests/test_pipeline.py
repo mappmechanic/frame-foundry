@@ -81,7 +81,9 @@ def test_mocked_agent_run_retains_planner_and_judge_tokens(tmp_path,input_set,mo
     response_count=[0]
     def transport(url,headers,body,timeout):
         payload=json.loads(body);role='judge' if 'Judge whether' in payload['system'] else 'planner'
-        if role=='planner':data=dict(interpretation='A trip highlight teaser',assumptions=['Sampled frames only'],segments=[dict(source_id='source-0001',raw_start_ms=0,raw_end_ms=4000,reason='First clip image'),dict(source_id='source-0002',raw_start_ms=0,raw_end_ms=4000,reason='Second clip image')],coverage=dict(status='partial',limitations=['8 seconds of selected highlights']))
+        if role=='planner':
+            prompt=json.loads(next(c['text'] for c in payload['messages'][0]['content'] if c['type']=='text'))
+            data=dict(interpretation='A trip highlight teaser',assumptions=['Sampled frames only'],segments=[dict(source_id=c['source_id'],raw_start_ms=c['start_ms'],raw_end_ms=c['end_ms'],reason='Supplied candidate image') for c in prompt['candidates'][:2]],coverage=dict(status='partial',limitations=['Only compact candidate evidence inspected']))
         else:data=dict(score=75,rationale='Goal mostly covered',evidence=['rendered frame 1'])
         response_count[0]+=1
         return 200,json.dumps(dict(stop_reason='end_turn',content=[dict(type='text',text=json.dumps(data))],usage=dict(input_tokens=1000,output_tokens=100))).encode()
