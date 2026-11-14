@@ -8,25 +8,23 @@ with bounded multimodal editing judgment. No media binaries or secrets belong in
 Install FFmpeg/ffprobe (`brew install ffmpeg` on Mac), then from this checkout:
 
 ```sh
-python3 -m venv .venv
-.venv/bin/pip install -r requirements-dev.txt
-.venv/bin/pip install -e .
+uv venv --python 3.13 .venv
+uv pip install --python .venv/bin/python -r requirements-dev.txt -e .
 ```
 
 The console entry point is `.venv/bin/framefoundry`. Editable installation from
 this checkout keeps the bundled `schemas/` and `contracts/` available. Lightweight
-verification covers Python 3.13 and 3.14; CI covers Linux 3.12/3.14 and Mac 3.14. FFmpeg is an external prerequisite.
+verification and CI use **Python 3.13** on Linux and Mac. FFmpeg is an external prerequisite.
 
-### Python 3.14 / OTIO metadata compatibility
+### Supported Python / OTIO runtime
 
-The assembler normalizes nested metadata to plain JSON values, then attaches it
-through OTIO's native JSON reader. It never passes Timeline/Clip metadata mappings
-to OTIO constructors, avoiding the reported Mac `RuntimeError: bad any cast` path.
-Source intervals, bool flags and selection mappings retain their types through
-`.otio` save/readback. OTIO remains pinned at 0.18.1; no Python downgrade is needed
-for this construction path. Python 3.14 verification in the development workspace
-uses Linux; the exact Mac mini/Python 3.14/FFmpeg 8.1 environment still needs its
-local rerun, with a Mac Python 3.14 CI job added to catch platform regressions.
+Python is pinned to `>=3.13,<3.14` in `pyproject.toml` and `3.13` in
+`.python-version`; OTIO remains pinned to 0.18.1. Mac Python 3.14 source builds
+failed native dictionary conversion **and built-in adapter-manifest JSON loading**
+with `RuntimeError: bad any cast`. Metadata normalization alone does not repair
+that binary/runtime incompatibility. Use a fresh Python 3.13 environment (above),
+not the old Python 3.14 venv. Linux-only Python 3.14 success is not Mac support.
+The assembler still normalizes and round-trips typed metadata through native JSON.
 
 
 ### Local speech recognition
@@ -70,8 +68,8 @@ Git, then uses the exact Goal:
 Use a fresh Episode ID on each run. Outputs are in `episodes/<id>/`:
 `finished.mp4`, `contact-sheet.jpg`, `qa-report.json`, `eval-report.json`,
 `narrative-spec.json`, `timeline.otio`, transcript/analysis, and ignored work media.
-Strict eval-duration failures retain `diagnostic.mp4`, not an advertised finished
-clip. Default target is 45 seconds and 1080×1920, 30 fps; a Goal can request 16:9
+Failed QA/evaluation renders retain `diagnostic.mp4` with a diagnostic path
+in the QA report, not an advertised finished clip. Default target is 45 seconds and 1080×1920, 30 fps; a Goal can request 16:9
 (1920×1080) and an explicit 5–120 second target. Originals are never modified.
 
 `make fetch-arizona` only downloads. To run the private sample integration test:

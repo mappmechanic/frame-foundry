@@ -108,7 +108,14 @@ def test_project_and_episode_budget_are_closed(tmp_path,monkeypatch):
 
 def test_proxy_rotation_and_source_immutability(input_set,tmp_path):
     original=input_set/'01-trip.mp4';rotated=tmp_path/'rotated.mov'
-    subprocess.run(['ffmpeg','-y','-v','error','-i',str(original),'-c','copy','-metadata:s:v:0','rotate=90',str(rotated)],check=True)
+    # New FFmpeg ignores the old output rotate tag; override the input display
+    # matrix instead. Keep the real rotation/source-immutability assertions.
+    help_result=subprocess.run(['ffmpeg','-hide_banner','-h','full'],capture_output=True,text=True,check=True)
+    if '-display_rotation' in help_result.stdout+help_result.stderr:
+        command=['ffmpeg','-y','-v','error','-noautorotate','-display_rotation:v:0','90','-i',str(original),'-map','0','-c','copy',str(rotated)]
+    else:
+        command=['ffmpeg','-y','-v','error','-i',str(original),'-c','copy','-metadata:s:v:0','rotate=90',str(rotated)]
+    subprocess.run(command,check=True)
     import hashlib
     before=hashlib.sha256(rotated.read_bytes()).digest();out=tmp_path/'proxy.mp4';mapping=create_proxy(rotated,out)
     assert abs(mapping['rotation_degrees'])==90
