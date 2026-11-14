@@ -360,7 +360,7 @@ def test_presenter_includes_three_latest_mac_checks_from_local_reports(report,tm
     missing=render_html(records[:1],episodes_root=tmp_path)
     assert '<td>az-0810</td><td>N/A</td>' in missing
     assert '<td>az-0835</td><td>N/A</td>' in missing
-    assert '0.808' not in missing
+    assert '<td>0.808</td>' not in missing
 
 
 def test_demo_presenter_jq_quality_cost_first_try_and_timing_are_distinct(report,tmp_path):

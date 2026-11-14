@@ -8,7 +8,7 @@ import statistics
 import tempfile
 from pathlib import Path
 
-from .learning_view import read_curve, pending_curve
+from .learning_view import read_curve
 from . import eval_tools as tools
 from .contracts import StageError, resolve_episode
 from .demo_scoreboard import _qa_pass, validated_reports

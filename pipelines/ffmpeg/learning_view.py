@@ -70,7 +70,7 @@ def _validated(curve):
             lessons = row.get('lessons_used')
             if not isinstance(lessons, list) or len(lessons) > 100 or not all(_text(x) for x in lessons):
                 raise ValueError('Invalid lesson identities')
-            if row.get('cost_status') not in COST_STATES:
+            if not _text(row.get('cost_status'), 80):
                 raise ValueError('Invalid cost status')
             clean['arms'][arm].append({k: row[k] for k in ('iteration', 'episode_id', 'status', *METRICS, 'cost_status', 'lessons_used')})
         clean['arms'][arm].sort(key=lambda r: r['iteration'])
@@ -149,7 +149,7 @@ def public_projection(curve, allowed_ids):
             projected = dict(iteration=row['iteration'], status=row['status'], published=visible,
                              episode_id=row['episode_id'] if visible else None,
                              data_url=f"/runs/{row['episode_id']}/run.json" if visible else None,
-                             cost_status=row['cost_status'] if visible else 'unavailable')
+                             cost_status=row['cost_status'] if visible and row['cost_status'] in COST_STATES else 'unavailable')
             projected.update({k: row[k] if visible else None for k in METRICS})
             if visible and projected['cost_status'] not in ('measured', 'estimated', 'complete', 'zero'):
                 projected['model_usd'] = None

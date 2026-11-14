@@ -276,3 +276,43 @@ def test_invalid_campaign_retains_previous_publication(setup):
     (setup[0]/'.campaign-arizona-reels.json').write_text('{invalid')
     with pytest.raises(ValueError): export(setup)
     assert (setup[2]/'public/runs/index.json').read_bytes()==previous
+
+
+def test_learning_export_allowlist_uses_actual_gated_exports(setup,report,monkeypatch):
+    from tests.test_learning_view import synthetic_curve, save
+    curve=synthetic_curve()
+    curve['arms']['memory_on'][0]['episode_id']='synthetic-on'
+    curve['arms']['memory_off'][0]['episode_id']='synthetic-off'
+    curve.update(goal='SECRET',lesson_text='SECRET',credentials='SECRET')
+    run_fixture(setup,report,'synthetic-on')
+    # A passed curve row is not enough: this Episode fails current publication gates.
+    run_fixture(setup,report,'synthetic-off',passed=False)
+    save(setup[1],curve);monkeypatch.setattr(exporter,'encode_video',fake_encoder)
+    export(setup)
+    public=setup[2]/'public/runs'
+    learning=json.loads((public/'learning.json').read_text())
+    index=json.loads((public/'index.json').read_text())
+    assert learning['source_episode_ids']==[r['id'] for r in index['runs']]==['synthetic-on']
+    assert learning['arms']['memory_off'][0]['Q'] is None
+    assert learning['arms']['memory_off'][0]['data_url'] is None
+    assert 'SECRET' not in (public/'learning.json').read_text()
+    assert learning['deltas'][0]['comparable'] is False
+    # A successful rebuild removes stale public learning proof as well as media.
+    (setup[0]/'synthetic-on/finished.mp4').write_bytes(b'stale')
+    export(setup)
+    learning=json.loads((public/'learning.json').read_text())
+    assert learning['source_episode_ids']==[]
+    assert learning['arms']['memory_on'][0]['model_usd'] is None
+
+
+@pytest.mark.parametrize('kind',['missing','malformed','symlink'])
+def test_optional_curve_failure_does_not_block_export(setup,kind):
+    from tests.test_learning_view import synthetic_curve, save
+    if kind!='missing':
+        path=save(setup[1],synthetic_curve())
+        if kind=='malformed':path.write_text('{broken')
+        else:
+            outside=setup[1]/'private.json';path.rename(outside);path.symlink_to(outside)
+    export(setup)
+    learning=json.loads((setup[2]/'public/runs/learning.json').read_text())
+    assert learning['status']=='pending' and learning['source_episode_ids']==[]
