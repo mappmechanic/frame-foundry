@@ -214,6 +214,9 @@ def render_timeline(timeline, candidate_path, *, episode_dir):
     joined = candidate.parent / 'joined.mov'
     _run(_ffmpeg() + ['-f', 'concat', '-safe', '1', '-i', str(manifest),
                       '-map', '0:v:0', '-map', '0:a:0', '-c', 'copy', str(joined)])
+    if timeline.metadata.get('voiceover'):
+        from .voiceover import mix_intro
+        joined=mix_intro(joined,timeline.metadata['voiceover'],episode_dir,cursor_frames/30)
     _normalize(joined, candidate)
     info = probe_media(candidate)
     return dict(cut_times_ms=cut_times, duration_ms=round(float(info['format']['duration']) * 1000))

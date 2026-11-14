@@ -122,8 +122,8 @@ def test_assert_can_spend_uses_configured_episode_budget(monkeypatch):
             assert_can_spend(**kwargs)
 
 
-def test_tts_accounting_is_pending_until_a_ledger_exists(tmp_path):
-    assert tts_usage_status(tmp_path) == dict(status='pending', implemented=False,
+def test_tts_accounting_is_not_used_until_a_ledger_exists(tmp_path):
+    assert tts_usage_status(tmp_path) == dict(status='not_used', implemented=True,
                                               shared_episode_budget=True, known_usd=0.0,
                                               unpriced_calls=0)
     (tmp_path / 'tts-usage.json').write_text(json.dumps({'calls': [

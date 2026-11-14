@@ -144,6 +144,10 @@ def build_timeline(spec: dict, analysis: dict) -> tuple[otio.schema.Timeline, di
         'schema_version': '1.0', 'aspect_ratio': amended['aspect_ratio'],
         'target_duration_ms': amended['target_duration_ms'],
         'framing_mode': 'center_crop' if amended['aspect_ratio']=='9:16' else 'fit_pad'})
+    if spec.get('voiceover'):
+        metadata=_plain_metadata(timeline.metadata)
+        metadata['voiceover']=_plain_metadata(spec['voiceover'])
+        timeline=_with_metadata(timeline,metadata)
     video = otio.schema.Track(name='V1', kind=otio.schema.TrackKind.Video)
     audio = otio.schema.Track(name='A1', kind=otio.schema.TrackKind.Audio)
     timeline.tracks.extend([video, audio])

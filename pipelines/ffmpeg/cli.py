@@ -38,7 +38,7 @@ def _judge_repair_fix(evaluation):
     return fix.strip()[:160] if weak else None
 
 
-def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixture=None,provider='env',visual_only=False,evals_root=None,eval_labels=None,planner_retry=True,asr_provider='auto'):
+def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixture=None,provider='env',visual_only=False,evals_root=None,eval_labels=None,planner_retry=True,asr_provider='auto',voiceover=False):
     if visual_only and transcript_fixture is not None:raise StageError('INPUT_CONFLICT','refinery','Choose visual-only or a transcript fixture, not both')
     if not goal.strip():raise StageError('GOAL_EMPTY','refinery','Goal must not be blank')
     if not Path(footage_dir).is_dir():raise StageError('INPUT_EMPTY','refinery','Footage directory is unavailable')
@@ -50,6 +50,9 @@ def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixt
         directory.mkdir();ctx=EpisodeContext(episode_id,directory,goal,fixture_mode=transcript_fixture is not None);attempts=[]
         save_state(ctx,'accepted');report=None;evaluation=None;active_provider=None;planning_retried=False;first_eval_passed=None;last_result=None;next_changes=[]
         try:
+            if voiceover:
+                from .voiceover import configuration
+                configuration()  # fail before any paid ASR/Planner work
             active_provider=provider
             if provider=='env':
                 try:active_provider=LLMProvider.from_env()
@@ -57,11 +60,11 @@ def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixt
                 except ProviderError:active_provider=None
             budget_note=None
             cloud_asr_enabled=not visual_only and transcript_fixture is None and asr_provider!='local' and bool(os.environ.get('OPENAI_API_KEY','').strip())
-            if active_provider is not None or cloud_asr_enabled:
+            if active_provider is not None or cloud_asr_enabled or voiceover:
                 try:reserve_project_episode(Path(os.environ.get('FRAMEFOUNDRY_PROJECT_BUDGET_DIR',str(Path(__file__).resolve().parents[2]))),str(directory))
                 except ProviderBudgetError:raise
                 except ProviderError as e:
-                    if cloud_asr_enabled:raise ProviderBudgetError('Project allowance unavailable; ASR and inference blocked') from None
+                    if cloud_asr_enabled or voiceover:raise ProviderBudgetError('Project allowance unavailable; ASR and inference blocked') from None
                     active_provider=None;budget_note=str(e)
             fixture=read_json(transcript_fixture) if transcript_fixture is not None else None
             def fixture_words(source):
@@ -90,6 +93,9 @@ def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixt
                         if degraded:
                             spec['coverage']['status']='partial'
                             spec['coverage']['limitations'].extend(note for note in degraded if note not in spec['coverage']['limitations'])
+                    if voiceover:
+                        from .voiceover import prepare_intro
+                        spec['voiceover']=prepare_intro(ctx,spec)
                     save_state(ctx,'assembler');result=assemble(ctx,spec,analysis,attempt=index);last_result=result
                     amended=read_json(result.spec_path);save_state(ctx,'validator')
                     report=validate_candidate(ctx,result,amended,attempts=attempts,judge_provider=None)
@@ -207,15 +213,18 @@ def _run_main(argv=None):
     p.add_argument('--evals-root',type=Path);p.add_argument('--eval-labels',type=Path);p.add_argument('--no-planner-retry',action='store_true')
     p.add_argument('--asr-provider',choices=['auto','local','openai'],default='auto',help='Prefer local WhisperX; auto falls back to OpenAI word timestamps when a key is configured')
     p.add_argument('--visual-only',action='store_true',help='Explicit diagnostic mode without ASR; speech integrity remains unverified')
+    p.add_argument('--voiceover',action='store_true',help='Opt in to cached ElevenLabs intro narration; requires ELEVENLABS_API_KEY')
     args=p.parse_args(argv)
     def terminate(signum,frame):raise KeyboardInterrupt()
     old=signal.signal(signal.SIGTERM,terminate)
     try:
-        report=run_episode(args.footage_dir,args.goal,episodes_root=args.episodes_root,episode_id=args.episode,transcript_fixture=args.transcript_fixture,visual_only=args.visual_only,evals_root=args.evals_root,eval_labels=args.eval_labels,planner_retry=not args.no_planner_retry,asr_provider=args.asr_provider)
+        report=run_episode(args.footage_dir,args.goal,episodes_root=args.episodes_root,episode_id=args.episode,transcript_fixture=args.transcript_fixture,visual_only=args.visual_only,evals_root=args.evals_root,eval_labels=args.eval_labels,planner_retry=not args.no_planner_retry,asr_provider=args.asr_provider,voiceover=args.voiceover)
         evaluation_path=Path(args.episodes_root)/report['episode_id']/'eval-report.json'
         evaluation=read_json(evaluation_path) if evaluation_path.is_file() else None
         metrics=dict(Q=evaluation['scores']['Q'],J=evaluation['scores']['J'],D=evaluation['scores']['D'],G=evaluation['scores']['G'],quality_per_dollar=evaluation['model_cost']['quality_per_dollar']) if evaluation else dict(Q=None,J=None,D=None,G=None,quality_per_dollar=None)
-        print(json.dumps(dict(evaluation=metrics,episode_id=report['episode_id'],result=report['result'],passed=report['passed'],error=report['error'],output_path=report['output_path'],diagnostic_path=report.get('diagnostic_path'),tokens=dict(input=sum(c['input_tokens'] or 0 for c in report['ai_usage']),output=sum(c['output_tokens'] or 0 for c in report['ai_usage']),complete=all(c['input_tokens'] is not None and c['output_tokens'] is not None for c in report['ai_usage'] if c['status']!='blocked' and c['role']!='transcription')),cost=report['cost'],goal_judge=report['goal_judge'],coverage=report['coverage'])))
+        summary_status='PASS' if report['passed'] and metrics['G']==1 else 'QA_PASS_EVAL_INCOMPLETE' if report['passed'] else 'FAIL'
+        coverage_note='Partial content coverage, not a technical failure: '+ '; '.join(report['coverage']['limitations']) if report['passed'] and report['coverage']['status']=='partial' else None
+        print(json.dumps(dict(status=summary_status,coverage_note=coverage_note,evaluation=metrics,episode_id=report['episode_id'],result=report['result'],passed=report['passed'],error=report['error'],output_path=report['output_path'],diagnostic_path=report.get('diagnostic_path'),tokens=dict(input=sum(c['input_tokens'] or 0 for c in report['ai_usage']),output=sum(c['output_tokens'] or 0 for c in report['ai_usage']),complete=all(c['input_tokens'] is not None and c['output_tokens'] is not None for c in report['ai_usage'] if c['status']!='blocked' and c['role'] not in ('transcription','tts'))),cost=report['cost'],goal_judge=report['goal_judge'],coverage=report['coverage'])))
         return 0 if report['passed'] else 1
     except StageError as e:print(e);return 2
     except KeyboardInterrupt:return 130

@@ -458,6 +458,7 @@ def run_gates(episode_dir):
             checks[name] = check(name, 'not_run', 'Render unavailable or unreadable')
     else:
         _media_checks(root, render, requested, target, shots, source_dims, checks, ctx, limitations)
+    _voiceover_check(root,spec,render,checks)
     _word_check(root, analysis, shots, checks, limitations)
     sheet = root / 'contact-sheet.jpg'
     try:
@@ -469,6 +470,7 @@ def run_gates(episode_dir):
     except Exception:
         checks['contact_sheet'] = check('contact_sheet', 'fail', 'Frame-boundary contact-sheet.jpg missing or undecodable')
     ordered = [checks[name] for name in CHECK_NAMES]
+    if 'voiceover_integrity' in checks:ordered.append(checks['voiceover_integrity'])
     return dict(passed=all(c['status'] == 'pass' for c in ordered), checks=ordered, context=ctx,
                 limitations=limitations)
 
@@ -728,3 +730,27 @@ def seeded_self_test(work_dir, defects=tuple(SEEDED_DEFECTS)):
     return dict(pipeline_passed=report['passed'], control_passed=control['passed'],
                 control_failed=[c['name'] for c in control['checks'] if c['status'] != 'pass'],
                 seeded=len(cases), detected=sum(c['detected'] for c in cases), cases=cases)
+
+
+def _voiceover_check(root,spec,render,checks):
+    vo=(spec or {}).get('voiceover')
+    if not vo:return
+    try:
+        from .voiceover import _hash
+        import opentimelineio as otio
+        path=(root/vo['path']).resolve()
+        timeline=otio.adapters.read_from_file(str(root/'timeline.otio'))
+        saved=timeline.metadata.get('voiceover')
+        if not path.is_relative_to(root.resolve()) or _hash(path)!=vo['sha256'] or dict(saved or {})!=vo:
+            raise ValueError('Saved VO audio/timeline identity differs')
+        info=json.loads(_run(['ffprobe','-v','error','-show_streams','-show_format','-of','json',str(path)]).stdout)
+        if not any(s.get('codec_type')=='audio' for s in info['streams']):raise ValueError('No narration audio')
+        seconds=float(info['format']['duration'])
+        if not math.isfinite(seconds):raise ValueError('Nonfinite narration duration')
+        duration=round(seconds*1000)
+        if not render or not 0<duration<=min(10000,render['duration_ms']) or abs(duration-vo['duration_ms'])>50 or vo['start_ms']!=0:
+            raise ValueError('VO duration/placement would clip narration')
+        checks['voiceover_integrity']=check('voiceover_integrity','pass',None,
+            dict(duration_ms=duration,start_ms=0,segments=1,sha256=vo['sha256'],note='One complete intro; technical timing/hash only, not semantic intelligibility'))
+    except Exception:
+        checks['voiceover_integrity']=check('voiceover_integrity','fail','VO audio, saved timing, or timeline hash binding invalid')

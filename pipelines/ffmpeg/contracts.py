@@ -90,7 +90,11 @@ def usage_summary(episode_dir):
     path=Path(episode_dir)/'llm-usage.json'
     try:
         ledger=read_json(path) if path.exists() else {'calls':[]}
-        calls=ledger['calls']
+        calls=list(ledger['calls'])
+        tts_path=Path(episode_dir)/'tts-usage.json'
+        if tts_path.exists():
+            tts=read_json(tts_path)['calls']
+            calls.extend(dict(c,input_tokens=None,output_tokens=None) for c in tts)
         fields=['call_id','role','provider','model','status','input_tokens','output_tokens','cost_usd','cost_status','reserved_usd','error']
         clean=[{k:c.get(k) for k in fields} for c in calls]
         schema=read_json(Path(__file__).resolve().parents[2]/'schemas'/'qa-report.schema.json')

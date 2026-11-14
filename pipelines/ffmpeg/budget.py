@@ -64,14 +64,14 @@ def assert_can_spend(max_charge_usd, *, paid_enabled, episode_spent_usd, project
 def tts_usage_status(episode_dir: Path) -> dict:
     """TTS accounting for the shared episode budget.
 
-    No TTS provider is implemented, so without an ``episode_dir/tts-usage.json`` ledger
-    the status is explicitly ``pending`` (not zero-cost). When a ledger exists, known
+    Optional ElevenLabs is implemented; absence of a ledger means ``not_used``.
+    When a ledger exists, known
     charged USD is reported (and is counted by ``LLMProvider`` against the same budget);
     entries without a price are counted as ``unpriced_calls``.
     """
     if not (Path(episode_dir) / 'tts-usage.json').exists():
-        return dict(status='pending', implemented=False, shared_episode_budget=True,
+        return dict(status='not_used', implemented=True, shared_episode_budget=True,
                     known_usd=0.0, unpriced_calls=0)
     known, unpriced = _tts_summary(Path(episode_dir))
-    return dict(status='pending' if unpriced else 'recorded', implemented=False,
+    return dict(status='pending' if unpriced else 'recorded', implemented=True,
                 shared_episode_budget=True, known_usd=float(known), unpriced_calls=unpriced)

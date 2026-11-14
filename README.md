@@ -10,13 +10,11 @@ Install FFmpeg/ffprobe (`brew install ffmpeg` on Mac), then from this checkout:
 ```sh
 # uv lives here on the demo Mac; add it to PATH if needed.
 export PATH="$HOME/.local/bin:$PATH"
-uv venv -p 3.13 --clear .venv
-uv pip install --python .venv/bin/python -r requirements-dev.txt -e .
+make setup
 ```
 
-Alternatively, `make setup` runs the same Python 3.13 venv creation and dependency
-installation, preferring `~/.local/bin/uv` when present (`UV=/path/to/uv` overrides
-it). **Both setup commands recreate `.venv`**, replacing an old Python 3.14
+`make setup` creates the Python 3.13 venv and installs dependencies, preferring `~/.local/bin/uv` when present (`UV=/path/to/uv` overrides
+it). **Setup recreates `.venv`**, replacing an old Python 3.14
 environment; do not run them during an active Episode. Python 3.10–3.12 are within
 the package range, but the verified demo/CI runtime is 3.13.
 
@@ -272,7 +270,7 @@ color fidelity, genuine ASR, live model judgment or human publishability.
 
 ### Arizona short-shot policy and CPU cues
 
-Run `uv pip install --python .venv/bin/python -r requirements-dev.txt -e .` after
+Run `make setup` after
 pulling to install CPU-only OpenCV. Bundled Haar faces/HOG people process at most
 three existing keyframes per source, <=320px, one thread and OpenCL disabled;
 no model downloads. Counts are detector cues, not verified subjects. Sparse
@@ -296,3 +294,35 @@ retained in attempt evidence; changed renders do not inherit stale final J/Q,
 and do not receive another judge call. Use `--no-planner-retry` for an explicitly
 single-plan comparison if you need a scored unchanged cut. Zero/unknown spend
 and missing semantic scores remain unavailable, never fabricated efficiency.
+
+
+### Rerun from a checkout without a venv (optional intro VO)
+
+```sh
+make setup  # creates/recreates Python 3.13 .venv and installs all dependencies
+set -a; source .env; set +a
+export FRAMEFOUNDRY_LLM_PROVIDER=openai
+make demo-arizona ARGS='--episode az-0600 --asr-provider auto --voiceover'
+.venv/bin/framefoundry scoreboard --table
+```
+
+Omit `--voiceover` for unchanged source-audio-only output. Explicit VO needs
+`ELEVENLABS_API_KEY`; default is stock Rachel (`ELEVENLABS_VOICE_ID` overrides),
+model `eleven_flash_v2_5`. The short two-line intro is generated locally from the
+saved narrative's Goal/selected moments; no extra LLM call or invented locations.
+A text/voice/model/settings hash caches successful audio. One paid intro call per
+Episode, no hidden HTTP retries; failed/possibly-paid charges remain visible.
+Original audio ducks by 10dB during the intro; normalization and independent
+loudness/peak gates still apply to the final mix. VO must fit fully inside the
+video, never truncated to force the target. No voice cloning or new music.
+
+TTS is priced at a **configurable assumed $0.30/1000 submitted characters**, not an
+account tariff or invoice; set `FRAMEFOUNDRY_TTS_USD_PER_1000_CHARS` to your actual
+plan/model estimate. All ASR/LLM/TTS reservations share Arizona's $0.10 cap.
+`tts-usage.json` and `eval-report.model_cost.tts_usd` retain separate TTS spend;
+quality-per-dollar includes it. Live ElevenLabs quality/billing need your Mac run.
+
+CLI `status=PASS` means QA and all eval gates pass. `result=partial` is retained
+as a content-coverage label and `coverage_note` spells out its limitations; it
+is not a contradiction of technical success. Missing eval evidence prints
+`QA_PASS_EVAL_INCOMPLETE`, not a false complete pass.
