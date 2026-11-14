@@ -2,7 +2,7 @@
 from __future__ import annotations
 import copy, hashlib, json, math, os, re, subprocess, tempfile, textwrap
 from pathlib import Path
-from PIL import ImageFont
+from PIL import Image, ImageDraw, ImageFont
 from .contracts import StageError
 
 STYLE=Path(__file__).resolve().parents[2]/'contracts/overlay-style.json'
@@ -149,22 +149,52 @@ def compile_cards(spec,analysis,timeline,root):
     plan['plan_sha256']=digest({k:v for k,v in plan.items() if k not in ('render_sha256','plan_sha256')})
     return spec
 
+def preflight():
+    """Portable PNG renderer: no drawtext, libass, or subtitle dependency."""
+    from .render import _run, _ffmpeg
+    result=_run(_ffmpeg()+['-filters'])
+    available=set(re.findall(r'^\s*[A-Z.]{3}\s+(\w+)\s',result.stdout+'\n'+result.stderr,re.M))
+    missing={'overlay','fade'}-available
+    if missing:
+        raise StageError('OVERLAY_FILTERS','assembler','PNG text compositing requires FFmpeg filters: '+', '.join(sorted(missing)))
+    return 'png'
+
+
+def card_png(card,path):
+    """Rasterize literal text and shadow inside the verified card rectangle."""
+    image=Image.new('RGBA',(card['width'],card['height']),(0,0,0,0))
+    draw=ImageDraw.Draw(image);font=ImageFont.truetype(str(font_path()),card['fontsize'])
+    for i,line in enumerate(card['text'].splitlines()):
+        y=6+round(i*card['fontsize']*1.35)
+        draw.text((8,y+2),line,font=font,fill=(0,0,0,166),anchor='lt')
+        draw.text((6,y),line,font=font,fill=(255,255,255,255),anchor='lt')
+    image.save(path,format='PNG')
+
+
 def burn(video,output,plan):
     from .render import _run,_ffmpeg
-    font=font_path();filters=[]
+    if not plan['cards']:
+        import shutil;shutil.copyfile(video,output)
+        plan['render_sha256']=filehash(output)
+        return
+    preflight()
     with tempfile.TemporaryDirectory(prefix='overlay-',dir=Path(output).parent) as scratch:
+        args=_ffmpeg()+['-i',str(video)]
+        filters=['[0:v:0]setpts=PTS-STARTPTS[base]'];last='base'
         for i,c in enumerate(plan['cards']):
-            text=Path(scratch)/f'text-{i}.txt';text.write_text(c['text'])
+            png=Path(scratch)/f'card-{i}.png';card_png(c,png)
+            args+=['-loop','1','-framerate','30','-i',str(png)]
             s=c['start_frame']/30;e=c['end_frame']/30
-            # User text is never filter syntax, %{expansion}, ASS tags or shell input.
-            escape=lambda p:str(p).replace('\\','\\\\').replace(':','\\:').replace("'", "\\'")
-            alpha=f'if(lt(t,{s}),0,if(lt(t,{s+.2}),(t-{s})/.2,if(lt(t,{e-.15}),1,if(lt(t,{e}),({e}-t)/.15,0))))'
+            # The inclusive between() upper bound is the LAST visible frame,
+            # never the exclusive end/cut frame. Tolerance is far below a frame.
+            a=s-1e-6;b=(c['end_frame']-1)/30+1e-6
+            filters.append(f'[{i+1}:v:0]format=rgba,setpts=PTS-STARTPTS,fade=t=in:st={s}:d=0.2:alpha=1,fade=t=out:st={e-.15}:d=0.15:alpha=1[card{i}]')
             y=f'{c["y"]}+8*(1-min(1,max(0,(t-{s})/.2)))'
-            filters.append(f"drawtext=fontfile='{escape(font)}':textfile='{escape(text)}':expansion=none:fontsize={c['fontsize']}:fontcolor=white:shadowcolor=black@0.65:shadowx=2:shadowy=2:line_spacing=4:x={c['x']}:y='{y}':alpha='{alpha}':enable='gte(n,{c['start_frame']})*lt(n,{c['end_frame']})'")
-        if filters:
-            _run(_ffmpeg()+['-i',str(video),'-vf',','.join(filters),'-map','0:v:0','-map','0:a:0','-c:v','libx264','-preset','fast','-crf','18','-pix_fmt','yuv420p','-threads','2','-c:a','copy',str(output)])
-        else:
-            import shutil;shutil.copyfile(video,output)
+            filters.append(f"[{last}][card{i}]overlay=x={c['x']}:y='{y}':enable='between(t,{a},{b})':shortest=1:eof_action=pass[v{i}]")
+            last=f'v{i}'
+        _run(args+['-filter_complex',';'.join(filters),'-map',f'[{last}]','-map','0:a:0',
+            '-c:v','libx264','-preset','fast','-crf','18','-pix_fmt','yuv420p','-threads','2',
+            '-c:a','copy','-shortest',str(output)])
     plan['render_sha256']=filehash(output)
 
 def verify(spec,video,cuts,duration_ms):

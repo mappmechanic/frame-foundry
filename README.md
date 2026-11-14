@@ -687,3 +687,12 @@ first recorded PR-title coverage are labeled. Run trends are derived from real
 exported artifacts, never seeded with the requested 11.9/40.6 numbers. Missing
 clips/metrics remain N/A. The Decisions result slide stays **pending evaluation**
 until a matched benchmark exists; campaign functionality is roadmap-only.
+
+### Portable overlay rendering
+
+Overlay text is rasterized as transparent PNGs by Pillow using the configured
+bold system font, then composited with FFmpeg `overlay` and alpha `fade`.
+`drawtext`, `subtitles`, and `ass` are not required (including Homebrew FFmpeg).
+Assembler preflight checks `overlay`/`fade` before rendering cuts. Render failures
+are reported as the schema-valid `assembler` stage, preserving their error code
+and diagnostic message instead of crashing QA-report serialization.

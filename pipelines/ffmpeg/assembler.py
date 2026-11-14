@@ -189,7 +189,8 @@ def assemble(ctx: EpisodeContext, spec: dict, analysis: dict, *, attempt: int = 
     from .disk_safety import require_free_disk
     require_free_disk(ctx.episode_dir,stage='assembler')
     timeline, amended = build_timeline(spec, analysis)
-    from .overlays import compile_cards,burn
+    from .overlays import compile_cards,burn,preflight
+    if spec.get('overlays'):preflight()
     amended=compile_cards(amended,analysis,timeline,ctx.episode_dir)
     if amended.get("overlays"):
         metadata=_plain_metadata(timeline.metadata);metadata["overlays"]=_plain_metadata(amended["overlays"])

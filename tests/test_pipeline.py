@@ -175,3 +175,20 @@ def test_two_repair_attempts_are_bounded(input_set,tmp_path,monkeypatch):
     report=cli.run_episode(input_set,'10 second teaser',episodes_root=tmp_path,episode_id='repair',transcript_fixture=input_set/'transcript-fixture.json',provider=None)
     assert report['passed'] and len(report['attempts'])==3 and counter[0]==3
     assert [a['passed'] for a in report['attempts']]==[False,False,True]
+
+
+def test_render_failure_emits_valid_assembler_diagnostic(input_set,tmp_path,monkeypatch):
+    from pipelines.ffmpeg import cli
+    def fail(*args,**kwargs):
+        raise StageError('RENDER_PROCESS','render','Overlay compositor failed: diagnostic retained')
+    monkeypatch.setattr(cli,'assemble',fail)
+    report=run_episode(input_set,'Create a 10 second family-trip teaser',episodes_root=tmp_path,
+        episode_id='render-failure',transcript_fixture=input_set/'transcript-fixture.json',provider=None,
+        overlays=True,planner_retry=False)
+    validate_report(report)
+    saved=read_json(tmp_path/'render-failure'/'qa-report.json');validate_report(saved)
+    assert not saved['passed'] and saved['stage']=='assembler'
+    assert saved['error']['code']=='RENDER_PROCESS' and saved['error']['stage']=='assembler'
+    assert saved['error']['message']=='Overlay compositor failed: diagnostic retained'
+    assert saved['attempts']==[dict(index=1,stage='assembler',passed=False,reasons=['RENDER_PROCESS'],changes=[])]
+    assert not (tmp_path/'render-failure'/'finished.mp4').exists()

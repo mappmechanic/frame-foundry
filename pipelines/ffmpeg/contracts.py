@@ -24,7 +24,8 @@ class EpisodeContext:
 class StageError(RuntimeError):
     def __init__(self, code, stage, message, source_id=None, repairable=False):
         super().__init__(message)
-        self.code, self.stage, self.source_id, self.repairable = code, stage, source_id, repairable
+        # Renderer is an assembler substage, not a QA schema stage.
+        self.code, self.stage, self.source_id, self.repairable = code, ('assembler' if stage == 'render' else stage), source_id, repairable
     def as_dict(self):
         return dict(code=self.code, stage=self.stage, message=str(self), source_id=self.source_id)
 

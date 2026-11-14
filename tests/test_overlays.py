@@ -69,11 +69,24 @@ def test_short_shot_omits_instead_of_spanning_cuts(tmp_path,monkeypatch):
     assert all(c['kind']!='title' for c in spec['overlays']['cards'])
 
 
-def test_real_burn_and_receipt_detects_mutation(tmp_path,monkeypatch):
+@pytest.mark.parametrize('limited_filters',[False,True])
+def test_real_burn_and_receipt_detects_mutation(tmp_path,monkeypatch,limited_filters):
     _,spec,_,_=setup_plan(tmp_path,monkeypatch)
     source=tmp_path/'source.mp4';output=tmp_path/'finished.mp4'
     subprocess.run(['ffmpeg','-v','error','-y','-f','lavfi','-i','color=c=blue:s=1080x1920:r=30:d=6',
         '-f','lavfi','-i','sine=frequency=500:duration=6','-c:v','libx264','-preset','ultrafast','-pix_fmt','yuv420p','-c:a','aac','-shortest',str(source)],check=True,capture_output=True)
+    if limited_filters:
+        import sys,shutil
+        from pipelines.ffmpeg import render
+        wrapper=tmp_path/'ffmpeg-no-text'
+        wrapper.write_text(f"#!{sys.executable}\n"+"import os,sys\n"+
+            "if '-filters' in sys.argv:\n print(' TSC overlay VV->V\\n TS. fade V->V');sys.exit(0)\n"+
+            "if any(x in ' '.join(sys.argv) for x in ('drawtext=', 'subtitles=', 'ass=')):\n sys.exit(99)\n"+
+            f"os.execv({shutil.which('ffmpeg')!r},['ffmpeg']+sys.argv[1:])\n")
+        wrapper.chmod(0o755)
+        base=render._ffmpeg()
+        monkeypatch.setattr(render,'_ffmpeg',lambda:[str(wrapper)]+base[1:])
+        assert overlays.preflight()=='png'
     overlays.burn(source,output,spec['overlays'])
     assert all(c['status']=='pass' for c in overlays.verify(spec,output,[3000],6000))
     from PIL import Image
@@ -117,3 +130,25 @@ def test_numbered_goal_list_enables_without_extra_flag(tmp_path):
     ctx=EpisodeContext('ep',tmp_path,'Sedona with Kids\n1. Halloween in Uptown\n2. Hilton Bell Rock')
     title,sections=overlays.requested(ctx)
     assert title=='Sedona with Kids' and len(sections)==2 and overlays.active(ctx)
+
+
+def test_png_is_literal_transparent_and_contains_shadow(tmp_path):
+    from PIL import Image
+    card=overlays.layout("Kids: 100% %{n} / Mom's trip",1080,1920)
+    path=tmp_path/'card.png';overlays.card_png(card,path)
+    with Image.open(path) as image:
+        assert image.mode=='RGBA' and image.size==(card['width'],card['height'])
+        pixels=list(image.getdata())
+        assert any(a==0 for r,g,b,a in pixels)
+        assert any((r,g,b,a)==(255,255,255,255) for r,g,b,a in pixels)
+        assert any((r,g,b,a)==(0,0,0,166) for r,g,b,a in pixels)
+
+
+def test_missing_compositing_filter_is_typed_before_render(monkeypatch):
+    from types import SimpleNamespace
+    from pipelines.ffmpeg import render
+    from pipelines.ffmpeg.contracts import StageError
+    monkeypatch.setattr(render,'_run',lambda args:SimpleNamespace(stdout=' TS. fade V->V',stderr=''))
+    with pytest.raises(StageError) as exc:overlays.preflight()
+    assert exc.value.code=='OVERLAY_FILTERS' and exc.value.stage=='assembler'
+    assert 'overlay' in str(exc.value)
