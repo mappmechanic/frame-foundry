@@ -322,6 +322,30 @@ def analyze_frames(video_path, shots, render_w, render_h, source_dims, fps=30):
                 overall_mean_abs_diff=sum(every) / len(every) if every else None)
 
 
+def ffmpeg_content_defects(video_path,duration_ms):
+    """Corroborate content-aware local measurements with named FFmpeg detectors.
+
+    Full-frame blackdetect does not classify ordinary letterbox borders as black
+    because 98% of the complete picture must be dark. The separate cropped
+    analysis catches black source content hidden by mattes. freezedetect uses a
+    conservative -80 dB noise floor; cropped jitter analysis remains stricter.
+    """
+    err=_run(['ffmpeg','-hide_banner','-nostats','-nostdin','-v','info','-i',str(video_path),'-an','-vf',
+        'scale=270:-2,blackdetect=d=0.5:pix_th=0.15:pic_th=0.98,freezedetect=n=-80dB:d=1','-f','null','-']).stderr
+    black=[dict(start_ms=round(float(a)*1000),end_ms=round(float(b)*1000),seconds=float(d))
+        for a,b,d in re.findall(r'black_start:([0-9.]+) black_end:([0-9.]+) black_duration:([0-9.]+)',err) if float(d)>0.5]
+    frozen=[];start=None
+    for kind,value in re.findall(r'freeze_(start|end):\s*([0-9.]+)',err):
+        if kind=='start':start=float(value)
+        elif start is not None:
+            end=float(value)
+            if end-start>1:frozen.append(dict(start_ms=round(start*1000),end_ms=round(end*1000),seconds=end-start))
+            start=None
+    if start is not None and duration_ms/1000-start>1:
+        frozen.append(dict(start_ms=round(start*1000),end_ms=duration_ms,seconds=duration_ms/1000-start))
+    return black,frozen
+
+
 def repeated_shot_pairs(shot_stats):
     pairs, flat = [], [s['shot_id'] for s in shot_stats if not s.get('dhashes')]
     hashed = [s for s in shot_stats if s.get('dhashes')]
@@ -503,12 +527,21 @@ def _media_checks(root, render, requested, target, shots, source_dims, checks, c
             checks[name] = check(name, 'fail', f'Frame analysis failed: {str(exc)[:120]}')
         return
     ctx['frames'] = frames
+    try:
+        detected_black,detected_freeze=ffmpeg_content_defects(video_path,render['duration_ms'])
+    except GateError:
+        checks['black_frames']=check('black_frames','fail','FFmpeg blackdetect unavailable')
+        checks['frozen_frames']=check('frozen_frames','fail','FFmpeg freezedetect unavailable')
+        checks['repeated_shots']=check('repeated_shots','not_run','Required detector failed')
+        return
+    frames['black_runs']+=detected_black
+    frames['freeze_runs']+=detected_freeze
     checks['black_frames'] = check('black_frames', 'fail' if frames['black_runs'] else 'pass',
                                    'Black content > 0.5 s' if frames['black_runs'] else None,
-                                   dict(runs=frames['black_runs'], letterbox_excluded=True))
+                                   dict(runs=frames['black_runs'], letterbox_excluded=True,method='content-aware analysis + ffmpeg blackdetect'))
     checks['frozen_frames'] = check('frozen_frames', 'fail' if frames['freeze_runs'] else 'pass',
                                     'Frozen content > 1 s' if frames['freeze_runs'] else None,
-                                    dict(runs=frames['freeze_runs'], letterbox_excluded=True,
+                                    dict(runs=frames['freeze_runs'], letterbox_excluded=True,method='content-aware analysis + ffmpeg freezedetect',
                                          mean_abs_diff_threshold=THRESHOLDS['freeze_mean_abs_diff']))
     pairs, flat = repeated_shot_pairs(frames['shots'])
     checks['repeated_shots'] = check('repeated_shots', 'fail' if pairs else 'pass',
