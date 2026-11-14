@@ -303,6 +303,31 @@ class ProviderTests(unittest.TestCase):
                 self.call(self.provider(transport=lambda *args: self.fail('Corrupt ledger dispatched')))
             self.assertEqual(path.read_text(), text)
 
+    def test_persisted_cost_rounding_never_frees_fractional_budget(self):
+        for value in (Decimal('0.00000000000000001'),
+                      Decimal('0.43315200000000000000001'),
+                      Decimal('4.999999999999999999999')):
+            stored = module._usd_upper_bound(value)
+            self.assertGreaterEqual(Decimal(str(stored)), value)
+            self.assertGreater(stored, 0)
+
+    def test_recording_failure_after_dispatch_keeps_reservation(self):
+        original = module._atomic_write
+        writes = []
+        def write(path, ledger):
+            writes.append(1)
+            if len(writes) == 2:
+                raise OSError('secret-test-key')
+            original(path, ledger)
+        with patch.object(module, '_atomic_write', side_effect=write):
+            with self.assertRaisesRegex(ProviderError, 'Unable to safely record'):
+                self.call(self.provider())
+        usage = self.ledger()[0]
+        self.assertEqual(usage['status'], 'failed')
+        self.assertIsNone(usage['cost_usd'])
+        self.assertGreater(usage['reserved_usd'], 0)
+        self.assertNotIn('secret-test-key', json.dumps(usage))
+
     def test_atomic_reservation_failure_prevents_dispatch(self):
         with patch.object(module, '_atomic_write', side_effect=OSError('secret-test-key')):
             with self.assertRaisesRegex(ProviderError, 'Unable to safely record'):

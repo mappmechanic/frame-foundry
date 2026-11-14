@@ -12,7 +12,7 @@ from __future__ import annotations
 import base64
 from contextlib import contextmanager
 from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_CEILING
 import fcntl
 import json
 import math
@@ -171,6 +171,17 @@ def _atomic_write(path: Path, ledger: dict):
             os.unlink(temporary)
 
 
+def _usd_upper_bound(value: Decimal) -> float:
+    """Round up for persistence; float conversion must never free budget."""
+    rounded = value.quantize(Decimal('0.000000000001'), rounding=ROUND_CEILING)
+    amount = float(rounded)
+    if Decimal(str(amount)) < rounded:
+        amount = math.nextafter(amount, math.inf)
+    if not math.isfinite(amount):
+        raise ValueError('Non-finite cost')
+    return amount
+
+
 def _charged(call: dict) -> Decimal:
     reserved = Decimal(str(call['reserved_usd']))
     cost = call['cost_usd']
@@ -302,8 +313,8 @@ class LLMProvider:
             cost = (Decimal(entry['input_tokens']) * self._rates[0]
                     + Decimal(entry['output_tokens']) * self._rates[1]) / 1_000_000
             try:
-                amount = float(cost)
-            except (OverflowError, ValueError):
+                amount = _usd_upper_bound(cost)
+            except (InvalidOperation, OverflowError, ValueError):
                 return
             if math.isfinite(amount):
                 entry['cost_usd'] = amount
@@ -351,8 +362,9 @@ class LLMProvider:
                 if self._rates is None:
                     raise ProviderError('Unknown model pricing; configure both rate overrides')
                 body = self._payload(system, prompt, images, max_output_tokens)
-                reservation = ((CONTEXT_TOKENS - max_output_tokens) * self._rates[0]
-                               + max_output_tokens * self._rates[1]) / 1_000_000
+                reservation = Decimal(str(_usd_upper_bound(
+                    ((CONTEXT_TOKENS - max_output_tokens) * self._rates[0]
+                     + max_output_tokens * self._rates[1]) / 1_000_000)))
             except ProviderError as exc:
                 entry['error'] = str(exc)
             except Exception:
