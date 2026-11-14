@@ -44,8 +44,8 @@ def main(argv=None):
     parser.add_argument('--no-planner-retry',action='store_true')
     parser.add_argument('--fetch-only', action='store_true')
     args = parser.parse_args(argv)
-    if sys.version_info[:2] != (3, 13):
-        parser.error("FrameFoundry requires Python 3.13 with OTIO 0.18.1; recreate .venv with uv venv --python 3.13")
+    if not (3, 10) <= sys.version_info[:2] < (3, 14):
+        parser.error("FrameFoundry requires Python >=3.10,<3.14 with OTIO 0.18.1; recreate .venv with uv venv -p 3.13 --clear")
     footage = fetch(args.data_dir)
     if args.fetch_only:
         print(footage)

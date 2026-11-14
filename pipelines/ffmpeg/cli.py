@@ -194,8 +194,8 @@ def _run_main(argv=None):
     finally:signal.signal(signal.SIGTERM,old)
 def main(argv=None):
     import sys
-    if sys.version_info[:2] != (3,13):
-        print('FrameFoundry requires Python 3.13 with OTIO 0.18.1; recreate .venv with uv venv --python 3.13',file=sys.stderr)
+    if not (3,10) <= sys.version_info[:2] < (3,14):
+        print('FrameFoundry requires Python >=3.10,<3.14 with OTIO 0.18.1; recreate .venv with uv venv -p 3.13 --clear',file=sys.stderr)
         return 2
     args=list(sys.argv[1:] if argv is None else argv)
     if args and args[0]=='run': args=args[1:]

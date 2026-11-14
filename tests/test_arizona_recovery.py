@@ -102,7 +102,7 @@ def test_cli_rejects_unsupported_python_before_dispatch(monkeypatch,capsys):
     import sys
     monkeypatch.setattr(sys,'version_info',(3,14,0))
     assert cli.main(['run'])==2
-    assert 'requires Python 3.13' in capsys.readouterr().err
+    assert 'requires Python >=3.10,<3.14' in capsys.readouterr().err
 
 
 def test_report_contract_rejects_reasonless_failed_check():

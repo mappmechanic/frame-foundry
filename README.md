@@ -8,9 +8,17 @@ with bounded multimodal editing judgment. No media binaries or secrets belong in
 Install FFmpeg/ffprobe (`brew install ffmpeg` on Mac), then from this checkout:
 
 ```sh
-uv venv --python 3.13 .venv
+# uv lives here on the demo Mac; add it to PATH if needed.
+export PATH="$HOME/.local/bin:$PATH"
+uv venv -p 3.13 --clear .venv
 uv pip install --python .venv/bin/python -r requirements-dev.txt -e .
 ```
+
+Alternatively, `make setup` runs the same Python 3.13 venv creation and dependency
+installation, preferring `~/.local/bin/uv` when present (`UV=/path/to/uv` overrides
+it). **Both setup commands recreate `.venv`**, replacing an old Python 3.14
+environment; do not run them during an active Episode. Python 3.10–3.12 are within
+the package range, but the verified demo/CI runtime is 3.13.
 
 The console entry point is `.venv/bin/framefoundry`. Editable installation from
 this checkout keeps the bundled `schemas/` and `contracts/` available. Lightweight
@@ -18,8 +26,8 @@ verification and CI use **Python 3.13** on Linux and Mac. FFmpeg is an external 
 
 ### Supported Python / OTIO runtime
 
-Python is pinned to `>=3.13,<3.14` in `pyproject.toml` and `3.13` in
-`.python-version`; OTIO remains pinned to 0.18.1. Mac Python 3.14 source builds
+Python is restricted to `>=3.10,<3.14` in `pyproject.toml` and `3.13` in
+`.python-version` selects **3.13** for demo setup; OTIO remains pinned to 0.18.1. Mac Python 3.14 source builds
 failed native dictionary conversion **and built-in adapter-manifest JSON loading**
 with `RuntimeError: bad any cast`. Metadata normalization alone does not repair
 that binary/runtime incompatibility. Use a fresh Python 3.13 environment (above),
