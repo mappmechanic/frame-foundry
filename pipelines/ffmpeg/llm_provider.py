@@ -250,10 +250,10 @@ class LLMProvider:
         if (type(max_output_tokens) is not int or not 1 <= max_output_tokens <= 16_384):
             raise ProviderError('Output token limit must be between 1 and 16384')
         instruction = '\nReturn only a valid JSON object. Do not use Markdown or tools.'
-        # UTF-8 bytes upper-bound text tokens. 2048/image exceeds both providers'
+        # UTF-8 bytes upper-bound text tokens. 1024/image exceeds both providers'
         # documented <=640px JPEG token formulas, with overhead margin of 4096.
         token_bound = (len((system + prompt + instruction).encode('utf-8'))
-                       + 2048 * len(images) + 4096 + max_output_tokens)
+                       + 1024 * len(images) + 4096 + max_output_tokens)
         if token_bound > CONTEXT_TOKENS:
             raise ProviderError('Request exceeds the conservative context limit')
         encoded = []

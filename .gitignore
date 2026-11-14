@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+*.mp4
+*.mov
+*.MOV
+*.wav
+*.mkv
+.env
+.ai-project*
+episodes/

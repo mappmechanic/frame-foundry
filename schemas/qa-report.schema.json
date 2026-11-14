@@ -1,0 +1,572 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "episode_id": {
+      "type": "string"
+    },
+    "goal": {
+      "type": "string"
+    },
+    "stage": {
+      "enum": [
+        "refinery",
+        "planner",
+        "assembler",
+        "validator",
+        "delivery"
+      ]
+    },
+    "passed": {
+      "type": "boolean"
+    },
+    "result": {
+      "enum": [
+        "passed",
+        "partial",
+        "failed"
+      ]
+    },
+    "fixture_mode": {
+      "type": "boolean"
+    },
+    "interpretation": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "assumptions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "full",
+            "partial",
+            "unknown"
+          ]
+        },
+        "limitations": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "status",
+        "limitations"
+      ]
+    },
+    "exclusions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "source_id": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_id",
+          "path",
+          "reason"
+        ]
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "output_path": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "contact_sheet_path": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "timeline_path": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "target_duration_ms": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "actual_duration_ms": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "integrated_lufs": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "true_peak_dbtp": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pass",
+              "fail",
+              "not_run"
+            ]
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "required": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "status",
+          "reason",
+          "required"
+        ]
+      }
+    },
+    "attempts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "index": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3
+          },
+          "stage": {
+            "type": "string"
+          },
+          "passed": {
+            "type": "boolean"
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "changes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "index",
+          "stage",
+          "passed",
+          "reasons",
+          "changes"
+        ]
+      }
+    },
+    "elapsed_seconds": {
+      "type": "number",
+      "minimum": 0
+    },
+    "cost": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "measured",
+            "estimated",
+            "unknown"
+          ]
+        },
+        "usd": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "known_ai_usd": {
+          "type": "number",
+          "minimum": 0
+        },
+        "includes_failed_attempts": {
+          "const": true
+        }
+      },
+      "required": [
+        "status",
+        "usd",
+        "known_ai_usd",
+        "includes_failed_attempts"
+      ]
+    },
+    "ai_usage": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "call_id": {
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "planner",
+              "judge"
+            ]
+          },
+          "provider": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "success",
+              "failed",
+              "blocked"
+            ]
+          },
+          "input_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "output_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "cost_usd": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "cost_status": {
+            "enum": [
+              "estimated",
+              "unknown"
+            ]
+          },
+          "reserved_usd": {
+            "type": "number",
+            "minimum": 0
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "call_id",
+          "role",
+          "provider",
+          "model",
+          "status",
+          "input_tokens",
+          "output_tokens",
+          "cost_usd",
+          "cost_status",
+          "reserved_usd",
+          "error"
+        ]
+      }
+    },
+    "goal_judge": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "scored",
+            "unavailable",
+            "failed"
+          ]
+        },
+        "score": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 100
+        },
+        "rationale": {
+          "type": "string"
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "status",
+        "score",
+        "rationale",
+        "evidence",
+        "provider",
+        "model"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "scored"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "score": {
+                "type": "number"
+              },
+              "rationale": {
+                "minLength": 1
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "score": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "error": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "stage": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "source_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "code",
+            "stage",
+            "message",
+            "source_id"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "episode_id",
+    "goal",
+    "stage",
+    "passed",
+    "result",
+    "fixture_mode",
+    "interpretation",
+    "assumptions",
+    "coverage",
+    "exclusions",
+    "limitations",
+    "output_path",
+    "contact_sheet_path",
+    "timeline_path",
+    "target_duration_ms",
+    "actual_duration_ms",
+    "integrated_lufs",
+    "true_peak_dbtp",
+    "checks",
+    "attempts",
+    "elapsed_seconds",
+    "cost",
+    "ai_usage",
+    "goal_judge",
+    "error"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "passed": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "output_path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "contact_sheet_path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "timeline_path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "integrated_lufs": {
+            "type": "number"
+          },
+          "true_peak_dbtp": {
+            "type": "number"
+          },
+          "result": {
+            "enum": [
+              "passed",
+              "partial"
+            ]
+          },
+          "error": {
+            "type": "null"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "result": {
+            "const": "failed"
+          },
+          "output_path": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "result": {
+            "const": "partial"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "coverage": {
+            "properties": {
+              "status": {
+                "const": "partial"
+              },
+              "limitations": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "result": {
+            "const": "passed"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "coverage": {
+            "properties": {
+              "status": {
+                "const": "full"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}
