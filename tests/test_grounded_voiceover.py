@@ -42,7 +42,7 @@ def test_same_call_subjects_survive_only_with_retained_frame_evidence(tmp_path):
     assert all(p['view']=='center_crop_9_16' and p['method']=='planner_in_window_tile' for p in proofs)
     semantics.validate_evidence(spec,a,tmp_path);validate_narrative(spec,a)
     text=voiceover.intro_text(spec)
-    assert 'Night parade' in text and 'market' in text and 'street performers' in text
+    assert 'night parade' in text and 'street performers' in text and 'market' not in text
     assert len(text)<90 and 1<=len(text.splitlines())<=2
     assert a==before
     # Persisted cached decisions still rebind to current frames/final selections.
@@ -52,7 +52,7 @@ def test_same_call_subjects_survive_only_with_retained_frame_evidence(tmp_path):
 
 def test_specific_labels_never_come_from_goal_or_reason():
     spec=dict(goal='Arizona Disneyland night parade market',segments=[dict(source_id='a',raw_start_ms=0,raw_end_ms=1000,reason='Night parade, Arizona')])
-    assert voiceover.intro_text(spec)=="A few selected moments.\nLet's take a look."
+    assert voiceover.intro_text(spec)=='Here are a few selected moments.'
 
 
 def test_subject_outside_selected_frame_rejected():
@@ -105,7 +105,7 @@ def test_complete_mocked_pipeline_speaks_retained_subjects(tmp_path,monkeypatch)
     spec=json.loads((tmp_path/'episodes'/'grounded'/'narrative-spec.json').read_text())
     assert spec['voiceover']['text']==calls[0]['text']==voiceover.intro_text(spec)
     assert any(noun in calls[0]['text'].lower() for noun in ('night parade','market','street performers'))
-    assert spec['voiceover']['grounding_version']=='subjects-v2' and len(calls[0]['text'])<90
+    assert spec['voiceover']['grounding_version']=='subjects-v3' and len(calls[0]['text'])<90
     assert any(s.get('semantic_evidence') for s in spec['segments'])
     evaluation=json.loads((tmp_path/'episodes'/'grounded'/'eval-report.json').read_text())
     assert next(c for c in evaluation['gates']['checks'] if c['name']=='voiceover_integrity')['status']=='pass'
@@ -146,7 +146,7 @@ def test_distinctive_retained_subjects_exclude_generic_family_filler():
     s=dict(source_id='a',raw_start_ms=0,raw_end_ms=1000,semantic_evidence=dict(method='planner_in_window_tile',source_id='a',frame_time_ms=500,
           subjects=['family_walk','family_activity','night_parade','market','street_performers'],labels=['people']))
     spec=dict(segments=[s]);text=voiceover.intro_text(spec)
-    assert 'Night parade' in text and 'market' in text and 'street performers' in text
+    assert 'night parade' in text and 'street performers' in text and 'market' not in text
     assert 'family activit' not in text.lower() and len(text)<90
     assert semantics.intro_v1(spec)!=text
     # Losing that evidence must remove the named subject, not transfer it.
@@ -164,3 +164,27 @@ def test_validated_baseline_cache_is_reused_for_matching_ui_defaults(tmp_path):
     ctx.target_seconds=30
     third=planner.plan_teaser(ctx,a,provider=provider)
     assert len(provider.calls)==2 and third['target_duration_ms']==30000
+
+
+def subject_spec(tags):
+    return dict(segments=[dict(source_id='a',raw_start_ms=0,raw_end_ms=1000,
+        semantic_evidence=dict(method='planner_in_window_tile',source_id='a',frame_time_ms=500,subjects=tags,labels=[]))])
+
+
+@pytest.mark.parametrize('tag',list(semantics.SUBJECTS))
+def test_single_subject_is_a_complete_sentence_not_a_bare_line(tag):
+    text=voiceover.intro_text(subject_spec([tag]))
+    assert text.startswith('These selected moments highlight ')
+    assert semantics.SUBJECTS[tag] in text
+    assert '\n' not in text and text.count('.')==1 and len(text)<90
+
+
+def test_natural_pair_names_only_two_distinctive_retained_subjects():
+    spec=subject_spec(['parade','market','family_activity'])
+    assert voiceover.intro_text(spec)=='From the parade to the market, these moments stood out.'
+    assert semantics.intro_v2(subject_spec(['market']))=='Market.\nThe moments that stood out.'
+    assert voiceover.intro_text(subject_spec(['market']))=='These selected moments highlight the market.'
+
+
+def test_one_distinctive_subject_does_not_pad_narration_with_generic_family():
+    assert voiceover.intro_text(subject_spec(['market','family_walk','family_activity']))=='These selected moments highlight the market.'

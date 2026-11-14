@@ -102,7 +102,7 @@ def prepare_intro(ctx,spec,*,transport=None):
     info=probe_media(target);duration_ms=round(float(info['format']['duration'])*1000)
     if not 0<duration_ms<=min(10000,spec['target_duration_ms']):raise StageError('VOICEOVER_INVALID','assembler','Cached intro exceeds duration budget')
     return dict(text=text,path=str(target.relative_to(ctx.episode_dir)),sha256=_hash(target),start_ms=0,duration_ms=duration_ms,
-                voice_id=voice,model=model,cached=cached,duck_db=-10,grounding_version='subjects-v2')
+                voice_id=voice,model=model,cached=cached,duck_db=-10,grounding_version='subjects-v3')
 
 
 def mix_intro(joined,voiceover,episode_dir,total_seconds):

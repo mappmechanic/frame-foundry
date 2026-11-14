@@ -26,7 +26,7 @@ def prepare(tmp_path,audio,monkeypatch):
 
 def test_intro_cache_and_cost_are_shared(tmp_path,audio,monkeypatch):
     spec,_,intro,calls=prepare(tmp_path,audio,monkeypatch)
-    assert len(calls)==1 and intro['start_ms']==0 and '\n' in intro['text']
+    assert len(calls)==1 and intro['start_ms']==0 and '\n' not in intro['text'] and intro['text'].endswith('.')
     assert json.loads(calls[0][2])['model_id']=='eleven_flash_v2_5'
     row=read_json(tmp_path/'tts-usage.json')['calls'][0]
     assert row['status']=='success' and row['cost_status']=='estimated' and row['cost_usd']>0
@@ -183,3 +183,21 @@ def test_historical_subjects_v1_still_valid_after_distinctive_writer(tmp_path,au
     otio.adapters.write_to_file(timeline,str(tmp_path/'timeline.otio'))
     checks={};eval_gates._voiceover_check(tmp_path,spec,dict(duration_ms=2000),checks)
     assert checks['voiceover_integrity']['status']=='pass'
+
+
+def test_historical_subjects_v2_still_evaluates_after_sentence_writer(tmp_path,audio,monkeypatch):
+    from pipelines.ffmpeg import eval_gates,semantics
+    from pipelines.ffmpeg.assembler import build_timeline
+    import opentimelineio as otio
+    spec,analysis,intro,_=prepare(tmp_path,audio,monkeypatch)
+    intro['grounding_version']='subjects-v2';intro['text']=semantics.intro_v2(spec)
+    spec['voiceover']=intro
+    timeline,_=build_timeline(spec,analysis)
+    otio.adapters.write_to_file(timeline,str(tmp_path/'timeline.otio'))
+    checks={};eval_gates._voiceover_check(tmp_path,spec,dict(duration_ms=2000),checks)
+    assert checks['voiceover_integrity']['status']=='pass'
+    # Historical text cannot masquerade as the new writer.
+    intro['grounding_version']='subjects-v3'
+    timeline,_=build_timeline(spec,analysis);otio.adapters.write_to_file(timeline,str(tmp_path/'timeline.otio'))
+    checks={};eval_gates._voiceover_check(tmp_path,spec,dict(duration_ms=2000),checks)
+    assert checks['voiceover_integrity']['status']=='fail'

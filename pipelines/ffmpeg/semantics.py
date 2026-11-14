@@ -114,8 +114,8 @@ DISTINCTIVE_ORDER=('night_parade','parade','street_performers','market','firewor
                   'amusement_ride','boat_ride','train_ride','food_stalls','hiking','beach','sunset')
 
 
-def intro(spec):
-    """Name retained distinctive evidence before generic family/scenic labels."""
+def intro_v2(spec):
+    """Historical writer: name retained distinctive evidence before generic family/scenic labels."""
     subjects,_=subjects_in(spec)
     distinctive=[SUBJECTS[s] for s in DISTINCTIVE_ORDER if s in subjects]
     if not distinctive:
@@ -136,3 +136,20 @@ def intro(spec):
         if len(chosen)==3:break
     joined=', '.join(chosen[:-1])+' and '+chosen[-1] if len(chosen)>1 else chosen[0]
     return joined.capitalize()+'.\nThe moments that stood out.'
+
+
+def intro(spec):
+    """One complete sentence, at most two retained evidenced subjects; no fragments."""
+    subjects,labels=subjects_in(spec)
+    if 'family_walk' in subjects:subjects.discard('family_activity')
+    tags=[s for s in DISTINCTIVE_ORDER if s in subjects][:2]
+    if not tags:tags=[s for s in SUBJECTS if s in subjects][:2]
+    nouns=[('the ' if s in ('night_parade','parade','market') else '')+SUBJECTS[s] for s in tags]
+    if not nouns:
+        nouns=(['people'] if 'people' in labels else [])+(['scenic views'] if 'scenic_wide' in labels else [])
+        if not nouns and 'action' in labels:nouns=['moments in motion']
+    if not nouns:return 'Here are a few selected moments.'
+    if len(nouns)==2:
+        text=f'From {nouns[0]} to {nouns[1]}, these moments stood out.'
+        if len(text)<90:return text
+    return f'These selected moments highlight {nouns[0]}.'

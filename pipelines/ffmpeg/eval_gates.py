@@ -737,12 +737,12 @@ def _voiceover_check(root,spec,render,checks):
     if not vo:return
     try:
         from .voiceover import _hash,intro_text
-        from .semantics import validate_evidence,intro_v1
+        from .semantics import validate_evidence,intro_v1,intro_v2
         validate_evidence(spec,root=root)
         legacy={'A few moments from our family trip.\nShared memories, together.','A few highlights from our footage.\nMemories worth revisiting.'}
         version=vo.get('grounding_version')
-        if version not in (None,'subjects-v1','subjects-v2'):raise ValueError('Unknown narration grounding version')
-        expected={intro_v1(spec)} if version=='subjects-v1' else {intro_text(spec)} if version=='subjects-v2' else legacy|{intro_v1(spec)}
+        if version not in (None,'subjects-v1','subjects-v2','subjects-v3'):raise ValueError('Unknown narration grounding version')
+        expected={intro_v1(spec)} if version=='subjects-v1' else {intro_v2(spec)} if version=='subjects-v2' else {intro_text(spec)} if version=='subjects-v3' else legacy|{intro_v1(spec)}
         if vo['text'] not in expected:raise ValueError('VO text differs from retained semantic evidence')
         import opentimelineio as otio
         path=(root/vo['path']).resolve()
