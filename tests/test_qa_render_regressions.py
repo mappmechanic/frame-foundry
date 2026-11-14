@@ -176,3 +176,24 @@ def test_real_fractional_cuts_cfr_and_final_encoded_true_peak(tmp_path, audio):
     assert -15 <= report['integrated_lufs'] <= -13
     assert report['true_peak_dbtp'] <= -1
     assert (tmp_path / 'contact-sheet.jpg').is_file()
+
+
+def test_real_sparse_high_crest_audio_keeps_peak_gate_and_rejects_lufs_undershoot(tmp_path):
+    spec, analysis = plan(tmp_path, ((0, 6000),))
+    subprocess.run(['ffmpeg', '-v', 'error', '-y', '-threads', '1', '-filter_threads', '1',
+        '-f', 'lavfi', '-i', 'color=c=red:s=160x90:r=30:d=6', '-f', 'lavfi', '-i',
+        'aevalsrc=0.95*sin(2*PI*440*t)*(0.003+0.997*lt(mod(t\\,0.25)\\,0.01)):s=48000:d=6',
+        '-c:v', 'libx264', '-preset', 'ultrafast', '-threads', '1', '-c:a', 'pcm_s16le',
+        '-f', 'matroska', spec['sources'][0]['path']], check=True, capture_output=True, timeout=60)
+    ctx = EpisodeContext('regression', tmp_path, spec['goal'])
+    result = assemble(ctx, spec, analysis)
+    report = qa.validate_candidate(ctx, result, json.loads(result.spec_path.read_text()), judge_provider=None)
+    print('Sparse encoded evidence:', report['integrated_lufs'], report['true_peak_dbtp'])
+    assert report['true_peak_dbtp'] <= -1
+    assert gate(report, 'true_peak')['status'] == 'pass'
+    acceptable_lufs = -15 <= report['integrated_lufs'] <= -13
+    assert (gate(report, 'loudness')['status'] == 'pass') == acceptable_lufs
+    assert report['passed'] == acceptable_lufs  # Peak success must never waive LUFS.
+    if not acceptable_lufs:
+        assert 'observed' in gate(report, 'loudness')['reason']
+    assert (tmp_path / 'contact-sheet.jpg').is_file()
