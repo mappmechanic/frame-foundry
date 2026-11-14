@@ -736,7 +736,10 @@ def _voiceover_check(root,spec,render,checks):
     vo=(spec or {}).get('voiceover')
     if not vo:return
     try:
-        from .voiceover import _hash
+        from .voiceover import _hash,intro_text
+        from .semantics import validate_evidence
+        validate_evidence(spec,root=root)
+        if vo['text']!=intro_text(spec):raise ValueError('VO text differs from retained semantic evidence')
         import opentimelineio as otio
         path=(root/vo['path']).resolve()
         timeline=otio.adapters.read_from_file(str(root/'timeline.otio'))

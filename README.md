@@ -335,3 +335,11 @@ claim that all raw footage was selected or semantically inspected. A shortlist
 is preview evidence only, never total available footage. Partial-coverage notes
 include the locally computed totals, replacing unverified model duration claims
 while retaining missing-content and ASR-coverage limitations.
+
+Intro VO now uses optional descriptive `subject_tags` from the existing Planner
+call, never an extra vision/LLM call. The closed vocabulary excludes named places.
+Only tags/labels with a retained selected-frame timestamp, canonical frame hash,
+and matching output-crop view survive into `segments[].semantic_evidence`.
+Screen depictions do not count as visiting an event. The intro is 1–2 lines,
+under 90 characters; uncertain/missing subjects use a neutral disclosed fallback.
+No locations or specific events are extracted from the Goal or filenames.

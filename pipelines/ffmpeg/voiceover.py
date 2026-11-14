@@ -13,8 +13,8 @@ MAX_BYTES=2_000_000
 
 def intro_text(spec):
     if not spec.get('segments'):raise StageError('VOICEOVER_INVALID','assembler','Narrative has no selected moments')
-    family=bool(re.search(r'\bfamily\b',spec['goal'],re.I))
-    return 'A few moments from our family trip.\nShared memories, together.' if family else 'A few highlights from our footage.\nMemories worth revisiting.'
+    from .semantics import intro
+    return intro(spec)
 
 
 def _hash(path):
@@ -36,6 +36,9 @@ def configuration():
 
 def prepare_intro(ctx,spec,*,transport=None):
     key,voice,model,rate=configuration()
+    from .semantics import validate_evidence
+    try:validate_evidence(spec,root=ctx.episode_dir)
+    except (ValueError,KeyError,TypeError,OSError):raise StageError('VOICEOVER_INVALID','assembler','Narration subject evidence invalid') from None
     text=intro_text(spec);settings=dict(stability=.5,similarity_boost=.75)
     identity=dict(protocol='intro-vo-1',text=text,voice_id=voice,model=model,settings=settings,output_format='mp3_44100_128')
     digest=hashlib.sha256(json.dumps(identity,sort_keys=True).encode()).hexdigest()

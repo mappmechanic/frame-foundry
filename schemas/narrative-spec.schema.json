@@ -180,6 +180,99 @@
           "reason": {
             "type": "string",
             "minLength": 1
+          },
+          "semantic_evidence": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "method",
+              "candidate_id",
+              "source_id",
+              "source_start_ms",
+              "source_end_ms",
+              "frame_time_ms",
+              "frame_path",
+              "frame_sha256",
+              "view",
+              "subjects",
+              "labels"
+            ],
+            "properties": {
+              "method": {
+                "const": "planner_in_window_tile"
+              },
+              "candidate_id": {
+                "type": "string"
+              },
+              "source_id": {
+                "type": "string"
+              },
+              "source_start_ms": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "source_end_ms": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "frame_time_ms": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "frame_path": {
+                "type": "string"
+              },
+              "frame_sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "view": {
+                "enum": [
+                  "center_crop_9_16",
+                  "fit_16_9"
+                ]
+              },
+              "subjects": {
+                "type": "array",
+                "uniqueItems": true,
+                "maxItems": 3,
+                "items": {
+                  "enum": [
+                    "night_parade",
+                    "parade",
+                    "market",
+                    "street_performers",
+                    "food_stalls",
+                    "family_walk",
+                    "family_activity",
+                    "scenic_view",
+                    "beach",
+                    "hiking",
+                    "amusement_ride",
+                    "boat_ride",
+                    "train_ride",
+                    "fireworks",
+                    "wildlife",
+                    "sunset",
+                    "city_street"
+                  ]
+                }
+              },
+              "labels": {
+                "type": "array",
+                "uniqueItems": true,
+                "maxItems": 5,
+                "items": {
+                  "enum": [
+                    "people",
+                    "action",
+                    "scenic_wide",
+                    "interior",
+                    "screen"
+                  ]
+                }
+              }
+            }
           }
         },
         "required": [
@@ -274,7 +367,7 @@
       "properties": {
         "text": {
           "type": "string",
-          "maxLength": 200
+          "maxLength": 89
         },
         "path": {
           "type": "string"

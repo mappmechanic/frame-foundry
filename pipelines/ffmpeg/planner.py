@@ -10,13 +10,13 @@ from pathlib import Path
 import re
 import tempfile
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageOps
 from jsonschema import Draft202012Validator, ValidationError
 
 from .contracts import EpisodeContext, StageError, atomic_write_json, validate_narrative
 from .goal_parser import parse_goal
 from .candidates import extract_candidates,rank_candidates
-from . import teaser_edit
+from . import teaser_edit, semantics
 from .llm_provider import LLMProvider, ProviderError, ProviderBudgetError
 
 _DEFAULT_PROVIDER = object()
@@ -34,7 +34,7 @@ will coalesce into a long shot. When the Goal is a family trip, prioritize peopl
 shared experiences, scenic destinations and activities over static rooms or TV
 screens unless those are explicitly central to the Goal. Open with a meaningful
 hook, develop the trip, and close with a payoff. Do not impose this family-trip
-preference on unrelated Goals. Samples are not exhaustive inspection. Return optional semantic_labels per segment only when supported by its in-window tile: people, action, scenic_wide, interior, screen. First shot must feature people/action or measured high motion. Last one or ideally two shots must mirror the hook with evidenced people/faces or scenic_wide payoff (an action label alone is insufficient), never dark or low-sharpness filler; high motion alone is not a closing qualifier. If unavailable, report partial coverage rather than invent labels. Prefer scenic wides and activity; penalize static interiors/screens except meaningful people/action. Use duration_evidence for raw source and usable durations; never infer total available footage from shortlist length. Quantitative duration limitations are computed locally. Do not claim eight supplied candidates represent all footage. Do not add unlisted fields.'''
+preference on unrelated Goals. Samples are not exhaustive inspection. Return optional semantic_labels per segment only when supported by its in-window tile: people, action, scenic_wide, interior, screen. First shot must feature people/action or measured high motion. Last one or ideally two shots must mirror the hook with evidenced people/faces or scenic_wide payoff (an action label alone is insufficient), never dark or low-sharpness filler; high motion alone is not a closing qualifier. If unavailable, report partial coverage rather than invent labels. Prefer scenic wides and activity; penalize static interiors/screens except meaningful people/action. Use duration_evidence for raw source and usable durations; never infer total available footage from shortlist length. Quantitative duration limitations are computed locally. Do not claim eight supplied candidates represent all footage. Return optional subject_tags only for visually clear subjects in the in-window tile: night_parade, parade, market, street_performers, food_stalls, family_walk, family_activity, scenic_view, beach, hiking, amusement_ride, boat_ride, train_ride, fireworks, wildlife, sunset, city_street. These are descriptions, not named places; omit uncertain subjects. Never infer venues, cities or visits from the Goal, filenames, screen content or unseen frames. Do not add unlisted fields.'''
 _RESPONSE_SCHEMA = {
     'type': 'object', 'additionalProperties': False,
     'required': ['interpretation', 'assumptions', 'segments', 'coverage'],
@@ -47,7 +47,7 @@ _RESPONSE_SCHEMA = {
             'properties': {'source_id': {'type': 'string'},
                            'raw_start_ms': {'type': 'integer', 'minimum': 0},
                            'raw_end_ms': {'type': 'integer', 'minimum': 0},
-                           'reason': {'type': 'string', 'minLength': 1}, 'semantic_labels': {'type':'array','maxItems':5,'uniqueItems':True,'items':{'enum':['people','action','scenic_wide','interior','screen']}}}}},
+                           'reason': {'type': 'string', 'minLength': 1}, 'subject_tags': {'type':'array','maxItems':3,'uniqueItems':True,'items':{'enum':list(semantics.SUBJECTS)}}, 'semantic_labels': {'type':'array','maxItems':5,'uniqueItems':True,'items':{'enum':['people','action','scenic_wide','interior','screen']}}}}},
         'coverage': {'type': 'object', 'additionalProperties': False,
                      'required': ['status', 'limitations'],
                      'properties': {'status': {'enum': ['full', 'partial']},
@@ -246,10 +246,13 @@ def _compact_evidence(ctx, analysis, directory, candidates=None):
         if c.get('frame_path'):
             try:
                 with Image.open(_safe_path(ctx.episode_dir,c.get('canonical_frame_path') or c['frame_path'])) as image:
-                    image=image.convert('RGB');image.thumbnail((160,160))
+                    image=image.convert('RGB')
+                    view='center_crop_9_16' if parse_goal(ctx.goal).aspect_ratio=='9:16' else 'fit_16_9'
+                    image=ImageOps.fit(image,(90,160)) if view=='center_crop_9_16' else ImageOps.contain(image,(160,90))
                     tile=Image.new('RGB',(160,192),'black');tile.paste(image,((160-image.width)//2,0))
                     ImageDraw.Draw(tile).text((2,161),str(c['candidate_id'])[-8:],fill='white')
                     ImageDraw.Draw(tile).text((2,177),f"{c['source_id']} {c['start_ms']}ms",fill='white')
+                row['frame_path']=c.get('canonical_frame_path') or c['frame_path'];row['frame_sha256']=hashlib.sha256(_safe_path(ctx.episode_dir,row['frame_path']).read_bytes()).hexdigest();row['view']=view
                 row['tile_index']=len(tiles);row['frame_time_ms']=c.get('frame_time_ms');row['frame_in_window']=c.get('frame_in_window',False);tiles.append(tile)
             except (OSError,ValueError):pass
         rows.append(row)
@@ -266,6 +269,8 @@ def _check_candidate_mapping(data,rows):
     for segment in data.get('segments',[]):
         if not any(c['source_id']==segment.get('source_id') and c['start_ms']<=segment.get('raw_start_ms',-1)<segment.get('raw_end_ms',-1)<=c['end_ms'] for c in rows):
             raise ValueError('Planner interval not mapped wholly to supplied candidate')
+        if segment.get('subject_tags') and not any(c.get('frame_in_window') and 'tile_index' in c and type(c.get('frame_time_ms')) is int and c['source_id']==segment['source_id'] and c['start_ms']<=segment['raw_start_ms']<=c['frame_time_ms']<segment['raw_end_ms']<=c['end_ms'] for c in rows):
+            raise ValueError('Subject tags lack a selected in-window tile')
         if segment.get('semantic_labels') and not any(c.get('frame_in_window') and 'tile_index' in c and c['source_id']==segment['source_id'] and c['start_ms']<=segment['raw_start_ms']<segment['raw_end_ms']<=c['end_ms'] for c in rows):
             raise ValueError('Semantic labels lack in-window image evidence')
 
@@ -377,7 +382,7 @@ def _reconstruct(ctx, analysis, intent, response, mode):
                 sources=deepcopy(analysis['sources']), segments=[], coverage=deepcopy(response['coverage']),
                 exclusions=deepcopy(analysis.get('exclusions', [])))
     for index, segment in enumerate(response['segments'], 1):
-        spec['segments'].append(dict({k:v for k,v in segment.items() if k!='semantic_labels'}, segment_id=f'seg-{index:03d}', render_start_ms=None, render_end_ms=None))
+        spec['segments'].append(dict({k:v for k,v in segment.items() if k not in ('semantic_labels','subject_tags')}, segment_id=f'seg-{index:03d}', render_start_ms=None, render_end_ms=None))
     limitations = spec['coverage']['limitations']
     actual = sum(s['raw_end_ms'] - s['raw_start_ms'] for s in spec['segments'])
     if actual > intent.target_duration_ms:
@@ -417,7 +422,7 @@ def plan_teaser(ctx: EpisodeContext, analysis: dict, *, provider=_DEFAULT_PROVID
                 if retry_fix is not None:payload['fix_instruction']=str(retry_fix)[:160]
                 # Cache only validated source-backed decisions, never media or credentials.
                 from .evaluator import footage_fingerprint
-                identity=dict(footage=footage_fingerprint(analysis['sources']),goal=ctx.goal,provider=getattr(provider,'provider',None),model=getattr(provider,'model',None),protocol='compact-planner-6-local-duration-closing-v2',transcription_status=analysis.get('transcription_status'),candidates=rows,fix=retry_fix)
+                identity=dict(footage=footage_fingerprint(analysis['sources']),goal=ctx.goal,provider=getattr(provider,'provider',None),model=getattr(provider,'model',None),protocol='compact-planner-7-grounded-subjects-crop-closing-v2',transcription_status=analysis.get('transcription_status'),candidates=rows,fix=retry_fix)
                 key=hashlib.sha256(json.dumps(identity,sort_keys=True).encode()).hexdigest()
                 cache=Path(os.environ.get('FRAMEFOUNDRY_CACHE_DIR',str(Path(__file__).resolve().parents[2]/'.inference-cache')))/'planner'/f'{key}.json'
                 data=None
@@ -441,6 +446,7 @@ def plan_teaser(ctx: EpisodeContext, analysis: dict, *, provider=_DEFAULT_PROVID
                 _reconstruct(ctx, analysis, intent, data, 'llm')
                 completed = teaser_edit.complete(analysis,intent,data,candidates or []) if teaser_edit.enabled(analysis) else _complete_visual_duration(analysis, intent, data, candidates or [])
                 spec = _reconstruct(ctx, analysis, intent, completed, 'llm')
+                semantics.attach(spec,data,rows)
                 if not hit and identity['footage']:
                     atomic_write_json(cache,dict(key=key,data=data,historical_usage=getattr(response,'usage',{})))
                 if hit:spec['assumptions'].append('Validated Planner cache hit; historical inference not charged again')

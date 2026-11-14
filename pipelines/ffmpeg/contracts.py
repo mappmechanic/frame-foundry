@@ -83,6 +83,10 @@ def validate_narrative(spec, analysis=None):
         if (x is None)!=(y is None) or (x is not None and not 0<=x<y<=sources[sid]['duration_ms']):
             raise StageError('PLAN_INVALID','assembler','Invalid render interval')
 
+    from .semantics import validate_evidence
+    try:validate_evidence(spec,analysis)
+    except (ValueError,KeyError,TypeError) as error:raise StageError('PLAN_INVALID','planner','Invalid semantic evidence') from error
+
 def unavailable_judge(reason='No configured provider'):
     return dict(status='unavailable',score=None,rationale=reason,evidence=[],provider=None,model=None)
 

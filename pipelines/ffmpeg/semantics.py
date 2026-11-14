@@ -1,0 +1,87 @@
+"""Closed descriptive vocabulary and frame-bound semantic provenance; no place names."""
+from pathlib import Path
+import hashlib
+
+SUBJECTS={
+    'night_parade':'night parade', 'parade':'parade', 'market':'market',
+    'street_performers':'street performers', 'food_stalls':'food stalls',
+    'family_walk':'family walks', 'family_activity':'family activities',
+    'scenic_view':'scenic views', 'beach':'beach scenes', 'hiking':'hiking',
+    'amusement_ride':'amusement rides', 'boat_ride':'boat rides',
+    'train_ride':'train rides', 'fireworks':'fireworks', 'wildlife':'wildlife',
+    'sunset':'sunsets', 'city_street':'street scenes',
+}
+LABELS=['people','action','scenic_wide','interior','screen']
+
+
+def attach(spec,data,rows):
+    """Only retained final selections inherit labels from an actually supplied tile."""
+    for segment in spec['segments']:
+        for decision in data['segments']:
+            if decision['source_id']!=segment['source_id']:continue
+            if not (decision.get('subject_tags') or decision.get('semantic_labels')):continue
+            for row in rows:
+                t=row.get('frame_time_ms')
+                if (row['source_id']==segment['source_id'] and row.get('frame_in_window') and 'tile_index' in row
+                    and type(t) is int and decision['raw_start_ms']<=t<decision['raw_end_ms']
+                    and segment['raw_start_ms']<=t<segment['raw_end_ms']
+                    and row['start_ms']<=decision['raw_start_ms']<decision['raw_end_ms']<=row['end_ms']
+                    and row.get('frame_path') and row.get('frame_sha256')):
+                    segment['semantic_evidence']=dict(method='planner_in_window_tile',candidate_id=row['candidate_id'],
+                        source_id=row['source_id'],source_start_ms=row['start_ms'],source_end_ms=row['end_ms'],
+                        frame_time_ms=t,frame_path=row['frame_path'],frame_sha256=row['frame_sha256'],view=row['view'],
+                        subjects=list(decision.get('subject_tags',[])),labels=list(decision.get('semantic_labels',[])))
+                    break
+            if 'semantic_evidence' in segment:break
+    return spec
+
+
+def subjects_in(spec):
+    subjects=set();labels=set()
+    for s in spec.get('segments',[]):
+        e=s.get('semantic_evidence',{});t=e.get('frame_time_ms')
+        if (e.get('method')!='planner_in_window_tile' or e.get('source_id')!=s['source_id']
+            or type(t) is not int or not s['raw_start_ms']<=t<s['raw_end_ms']):continue
+        # A screen depicting an event is not evidence that the trip visited it.
+        if 'screen' in e.get('labels',[]):continue
+        subjects.update(t for t in e.get('subjects',[]) if t in SUBJECTS)
+        labels.update(t for t in e.get('labels',[]) if t in LABELS)
+    if 'night_parade' in subjects:subjects.discard('parade')
+    return subjects,labels
+
+
+def intro(spec):
+    subjects,labels=subjects_in(spec)
+    nouns=[SUBJECTS[s] for s in SUBJECTS if s in subjects]
+    if not nouns:
+        nouns=['people sharing moments'] if 'people' in labels else []
+        if 'scenic_wide' in labels:nouns.append('scenic views')
+        if not nouns and 'action' in labels:nouns=['moments in motion']
+    if not nouns:return "A few selected moments.\nLet's take a look."
+    chosen=[]
+    for noun in nouns:
+        trial=chosen+[noun]
+        joined=', '.join(trial[:-1])+' and '+trial[-1] if len(trial)>1 else trial[0]
+        text=joined[0].upper()+joined[1:]+'.\nA few highlights, together.'
+        if len(text)<90:chosen=trial
+        if len(chosen)==3:break
+    joined=', '.join(chosen[:-1])+' and '+chosen[-1] if len(chosen)>1 else chosen[0]
+    return joined[0].upper()+joined[1:]+'.\nA few highlights, together.'
+
+
+def validate_evidence(spec,analysis=None,root=None):
+    sources={s['source_id']:s for s in spec['sources']}
+    for s in spec['segments']:
+        e=s.get('semantic_evidence')
+        if not e:continue
+        t=e['frame_time_ms']
+        if (e['source_id']!=s['source_id'] or not s['raw_start_ms']<=t<s['raw_end_ms']
+            or not 0<=e['source_start_ms']<=t<e['source_end_ms']<=sources[s['source_id']]['duration_ms']
+            or not any(f['path']==e['frame_path'] and f['source_time_ms']==t for f in sources[s['source_id']]['keyframes'])):
+            raise ValueError('Semantic subject lacks retained source-frame evidence')
+        if e['view']!=('center_crop_9_16' if spec['aspect_ratio']=='9:16' else 'fit_16_9'):
+            raise ValueError('Semantic evidence view differs from output framing')
+        if root is not None:
+            root=Path(root).resolve();path=(root/e['frame_path']).resolve()
+            if not path.is_relative_to(root) or hashlib.sha256(path.read_bytes()).hexdigest()!=e['frame_sha256']:
+                raise ValueError('Semantic evidence frame hash/path invalid')
