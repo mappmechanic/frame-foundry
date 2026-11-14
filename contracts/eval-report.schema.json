@@ -745,6 +745,52 @@
           ]
         }
       }
+    },
+    "memory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "backend",
+        "status",
+        "lessons_used",
+        "limitations"
+      ],
+      "properties": {
+        "enabled": {
+          "const": true
+        },
+        "backend": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "lessons_used": {
+          "type": "array",
+          "maxItems": 5,
+          "items": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
+        "limitations": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "storage_root": {
+          "type": "string"
+        },
+        "requested_backend": {
+          "enum": [
+            "auto",
+            "local",
+            "hydradb"
+          ]
+        }
+      }
     }
   }
 }
