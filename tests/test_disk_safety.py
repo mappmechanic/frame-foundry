@@ -55,7 +55,9 @@ def test_real_successful_pipeline_default_cleanup_and_opt_out(tmp_path,monkeypat
     assert (episode/'work/attempt-1/narrative-spec.json').is_file()
     assert (episode/'work/attempt-1/concat.txt').is_file()
     # Removing intermediate media does not prevent independent final-artifact evaluation.
-    assert evaluate_episode(episode,provider=None,persist=False)['render_hash']
+    evaluation=evaluate_episode(episode,provider=None,persist=False)
+    assert evaluation['render_hash']
+    assert next(c for c in evaluation['gates']['checks'] if c['name']=='artifact_schemas')['status']=='pass'
 
 
 def test_keep_work_cli_flag_forwarded(tmp_path,monkeypatch,capsys):

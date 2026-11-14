@@ -856,6 +856,24 @@
         "created_at",
         "outcome"
       ]
+    },
+    "work_cleanup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "deleted",
+        "failed"
+      ],
+      "properties": {
+        "deleted": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failed": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
     }
   }
 }
