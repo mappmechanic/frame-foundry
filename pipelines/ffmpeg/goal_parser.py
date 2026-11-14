@@ -19,7 +19,7 @@ class GoalIntent:
 
 _NUMBER = r'(?:\d+(?:\.\d+)?|\.\d+)'
 _UNIT = r'(?:seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h)\b'
-_DURATION = re.compile(rf'(?<![\w.:])({_NUMBER})\s*({_UNIT})?\s*(?:[-–—]|\bto\b)\s*({_NUMBER})\s*({_UNIT})|(?<![\w.:])({_NUMBER})\s*({_UNIT})', re.I)
+_DURATION = re.compile(rf'(?<![\w.:])({_NUMBER})\s*({_UNIT})?\s*(?:[-–—]|\bto\b)\s*({_NUMBER})\s*({_UNIT})|(?<![\w.:])({_NUMBER})\s*-?\s*({_UNIT})', re.I)
 _STOP = set('a an the my our your their we us i me of for from in on at to and or with without make create produce edit use using all raw footage video videos clip clips reel reels teaser trip family highlights highlight vacation holiday please show include featuring focus moments moment important best into output duration second seconds sec secs minute minutes min mins short quick long longer extended vertical portrait landscape horizontal aspect ratio format then but instead chronological montage fun cinematic'.split())
 
 
@@ -54,6 +54,8 @@ def parse_goal(goal: str) -> GoalIntent:
     for negative in re.finditer(rf'-\s*({_NUMBER})\s*({_UNIT})', text, re.I):
         if not re.search(r'\d(?:\s*' + _UNIT + r')?\s*$', text[:negative.start()], re.I):
             _constraint('Negative duration is unsupported')
+    if re.search(rf'{_NUMBER}\s*(?:[-–—]\s*[-–—]|[-–—]\s*(?!{_UNIT})[A-Za-z])', text, re.I):
+        _constraint('Malformed numeric duration range')
     matches = list(_DURATION.finditer(text))
     durations = []
     for match in matches:

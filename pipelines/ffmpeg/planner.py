@@ -5,6 +5,7 @@ from copy import deepcopy
 import json
 import math
 from pathlib import Path
+import re
 import tempfile
 
 from PIL import Image
@@ -47,10 +48,6 @@ def _safe_path(episode_dir, relative):
     if not path.is_relative_to(root):
         raise ValueError('Image path escapes episode')
     return path
-
-
-def _sample_indices(count, fractions=(.15, .5, .85)):
-    return list(dict.fromkeys(min(count - 1, int((count - 1) * f + .5)) for f in fractions)) if count else []
 
 
 def _planner_images(ctx, sources, directory):
@@ -115,13 +112,11 @@ def _fallback(analysis, intent, cause):
         sharp = max(0, _number(scene.get('sharpness'))) / max_sharp
         motion = min(1, max(0, _number(scene.get('motion'))))
         evidence = ' '.join(w['text'].lower() for w in analysis.get('words', []) if w['source_id'] == sid and a <= w['start_ms'] < b)
-        matches = [term for term in intent.requested_terms if term in evidence.split()]
+        matches = [term for term in intent.requested_terms if term in re.findall(r"[a-z]+(?:'[a-z]+)?", evidence)]
         score = 2 * len(matches) + .5 * sharp + .3 * motion + .2 * (1 - abs(2 * brightness - 1))
         if brightness < .03 or brightness > .97:
             score -= 2
         reason = f'Goal highlights: numeric scene cues brightness={brightness:.3f}, sharpness={sharp:.3f}, motion={motion:.3f}'
-        if matches:
-            reason += '; transcript evidence: ' + ', '.join(matches)
         candidates.append((score, sid, a, b, reason))
     candidates.sort(key=lambda c: (-c[0], order[c[1]], c[2]))
     # Source-diverse first pass, then ranked remaining candidates.
@@ -147,7 +142,12 @@ def _fallback(analysis, intent, cause):
                 length = min(hi - lo, cap, remaining)
                 if length <= 0:
                     continue
-                selections.append(dict(source_id=sid, raw_start_ms=lo, raw_end_ms=lo + length, reason=reason))
+                selected_words = ' '.join(w['text'].lower() for w in analysis.get('words', [])
+                    if w['source_id'] == sid and lo <= w['start_ms'] and w['end_ms'] <= lo + length)
+                selected_terms = [term for term in intent.requested_terms
+                    if term in re.findall(r"[a-z]+(?:'[a-z]+)?", selected_words)]
+                interval_reason = reason + ('; transcript evidence: ' + ', '.join(selected_terms) if selected_terms else '')
+                selections.append(dict(source_id=sid, raw_start_ms=lo, raw_end_ms=lo + length, reason=interval_reason))
                 remaining -= length
             if remaining <= 0:
                 break
@@ -160,8 +160,10 @@ def _fallback(analysis, intent, cause):
             merged[-1]['raw_end_ms'] = segment['raw_end_ms']
         else:
             merged.append(segment)
-    text = ' '.join(w['text'].lower() for w in analysis.get('words', []))
-    missing = [term for term in intent.requested_terms if term not in text.split()]
+    text = ' '.join(w['text'].lower() for w in analysis.get('words', [])
+                    if any(s['source_id'] == w['source_id'] and s['raw_start_ms'] <= w['start_ms']
+                           and w['end_ms'] <= s['raw_end_ms'] for s in merged))
+    missing = [term for term in intent.requested_terms if term not in re.findall(r"[a-z]+(?:'[a-z]+)?", text)]
     limitations = []
     if missing:
         limitations.append('Requested content not verified by source evidence: ' + ', '.join(missing) + '; filenames are weak hints, not visual verification')

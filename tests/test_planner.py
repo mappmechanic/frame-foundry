@@ -193,3 +193,44 @@ def test_invalid_goal_never_calls_provider(tmp_path):
     with pytest.raises(StageError):
         plan_teaser(context(tmp_path, analysis), analysis, provider=provider)
     assert not provider.calls
+
+
+def test_maximum_40_source_sampling_bound(tmp_path):
+    analysis = analysis_for(count=40)
+    frames = []
+    for i, time in enumerate((4500, 15000, 25500)):
+        path = f'frame-{i}.jpg'
+        Image.new('RGB', (80, 50)).save(tmp_path/path)
+        frames.append(dict(path=path, source_time_ms=time, proxy_time_ms=time))
+    for source in analysis['sources']:
+        source['keyframes'] = frames
+    provider = FakeProvider(ai_response())
+    plan_teaser(context(tmp_path, analysis), analysis, provider=provider)
+    assert len(provider.calls[0]['images']) == 120
+    assert len(provider.calls[0]['prompt']) < 60000
+
+
+def test_bad_image_path_never_leaves_episode(tmp_path):
+    analysis = analysis_for()
+    analysis['sources'][0]['keyframes'] = [dict(path='../outside.jpg', source_time_ms=1, proxy_time_ms=1)]
+    provider = FakeProvider(ai_response())
+    plan_teaser(context(tmp_path, analysis), analysis, provider=provider)
+    assert provider.calls[0]['images'] == []
+
+
+def test_unselected_or_unknown_transcript_cannot_claim_content_coverage(tmp_path):
+    analysis = analysis_for('birthday', count=1, duration=60000)
+    analysis['words'] = [dict(source_id='source-0', text='birthday', start_ms=55000, end_ms=55100),
+                         dict(source_id='invented', text='birthday', start_ms=1, end_ms=100)]
+    spec = plan_teaser(context(tmp_path, analysis), analysis, provider=None)
+    assert spec['coverage']['status'] == 'partial'
+    assert any('birthday' in s for s in spec['coverage']['limitations'])
+    assert not any('transcript evidence: birthday' in s['reason'] for s in spec['segments'])
+
+
+def test_punctuation_in_selected_transcript_terms(tmp_path):
+    analysis = analysis_for('Paris')
+    analysis['words'] = [dict(source_id='source-0', text='Paris!', start_ms=10, end_ms=100)]
+    spec = plan_teaser(context(tmp_path, analysis), analysis, provider=None)
+    assert spec['coverage']['status'] == 'full'
+    assert any('transcript evidence: paris' in s['reason'] for s in spec['segments'])

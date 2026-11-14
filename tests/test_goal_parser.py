@@ -38,3 +38,14 @@ def test_conflicts_and_named_requests():
     assert any('ignored' in a for a in intent.assumptions)
     assert any('Conflicting aspect' in a for a in intent.assumptions)
     assert intent == parse_goal('30s then 60s birthday in Paris vertical and landscape')
+
+
+@pytest.mark.parametrize('goal', ['30--60s', '30-foo seconds'])
+def test_malformed_numeric_ranges_fail(goal):
+    with pytest.raises(StageError) as error:
+        parse_goal(goal)
+    assert error.value.code == 'GOAL_CONSTRAINT_UNSUPPORTED'
+
+
+def test_hyphenated_duration():
+    assert parse_goal('30-second teaser').target_duration_ms == 30000
