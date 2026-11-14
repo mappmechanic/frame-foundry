@@ -25,3 +25,11 @@ evals/.inference-cache/
 evals/pairwise/
 evals/pairwise.jsonl
 evals/.*.lock
+
+# Static demo export: public family media/data are generated on the deploying Mac.
+site/public/
+site/.export.lock
+site/.public-stage-*/
+site/.public-backup/
+site/.encode-*/
+site/.vercel/

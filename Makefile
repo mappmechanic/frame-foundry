@@ -21,3 +21,8 @@ demo-arizona:
 # Local demo server; no environment recreation or paid call until Generate.
 ui:
 	$(PYTHON) -m pipelines.ffmpeg.cli serve $(ARGS)
+
+# Read-only local export; deploy manually from the Mac, never render on Vercel.
+.PHONY: site
+site:
+	$(PYTHON) scripts/export_site.py $(ARGS)

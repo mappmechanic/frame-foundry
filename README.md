@@ -581,3 +581,58 @@ All values come from local evaluation records/artifacts; Mac reports are not fab
 Use the `make ui` command above; scoreboard/export are read-only and make no paid calls.
 Successful work-media cleanup, disk admission, budget caps and the recovered selection
 baseline remain; no Campaign changes were made.
+
+### Public static demo (Vercel; recorded only)
+
+The public `/` landing page and `/studio` are static. Uploads and rendering are
+explicitly disabled: **renders run locally on the Mac; this is a recorded demo**.
+There is no Python/FFmpeg server, upload endpoint, provider call, or paid request
+on Vercel. The default lead and studio selection are the newest verified export;
+az-0700 and az-0835 appear in the picker when their complete artifacts are present.
+
+On the Mac with the real `episodes/` and `evals/`, using the existing Python venv
+and FFmpeg/ffprobe installation, run from the repository root:
+
+```sh
+make site && npx vercel deploy site --prod
+```
+
+The second command is **manual publication by you**, not an agent deployment.
+The Vercel CLI may ask you to log in and choose/link a Vercel project. Set the
+project root to `site`, retain its checked-in `vercel.json`, and do not configure
+a framework or remote render/build command. The configuration serves generated
+`site/public/`, provides clean `/studio` URLs, and sends `X-Robots-Tag: noindex`
+on every resource. Keep `site/.vercelignore`: it intentionally allows the
+Git-ignored generated videos/data to be uploaded by the CLI.
+
+Custom local artifact roots can be exported first:
+
+```sh
+make site ARGS='--episodes-root /path/to/episodes --evals-root /path/to/evals'
+# Inspect the summary, then deploy only if the expected real runs were exported.
+npx vercel deploy site --prod
+```
+
+`make site` copies the pages, generates public-safe JSON and contact sheets, and
+re-encodes complete browser videos as 720×1280 H.264/AAC, at most **8,000,000 bytes
+per video**. It strips media/contact-sheet metadata and excludes raw footage,
+transcripts, free-form Goal text, local paths, and provider diagnostics. Original
+Episode files are never changed or removed. QA/evaluation failures, stale hashes,
+missing artifacts, and unsafe symlinks are omitted; unexpected encoding or swap
+failures retain the previous successful bundle. Budget roughly 8 MB per run plus
+contact sheets and temporary encoding space; the normal 1 GB free-disk admission
+floor applies. `site/public/` and temporary export files are excluded from Git.
+
+Inspect the printed exported/omitted count and lead run ID before publishing.
+An empty export is deployable but honestly displays N/A, **not** sample footage.
+This agent workspace has no Mac az artifacts; export on the Mac to populate the
+actual hero and picker. Public scores and QA describe the verified original
+local render, not a separately rescored compressed web copy. Cost/clip uses the
+exported shipment count with the latest valid Episode cost snapshots (including
+failed overhead); incomplete cost is disclosed. Ticket→PR is median first
+recorded PR-title scope coverage, **not** clip latency, completion, or merge.
+
+**Public-access warning:** publishing exposes the selected family videos and
+contact sheets to anyone who can reach the URL. `noindex` and `robots.txt` reduce
+discovery; they are **not** authentication, authorization, or confidentiality.
+Review the exported runs and get any needed family consent before deployment.
