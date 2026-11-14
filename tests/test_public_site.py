@@ -171,7 +171,7 @@ def test_empty_export_has_no_invented_media(page):
 def test_unsafe_ids_are_never_requested_or_shown(unsafe):
     page = Page('studio.html')
     out = execute(page, {'/runs/index.json': index([summary(unsafe)])})
-    assert len(out['requests']) == 1
+    assert [r['path'] for r in out['requests']] == ['/runs/index.json', '/runs/campaigns.json']
     assert out['elements']['run-picker']['disabled']
     assert out['elements']['run-heading']['text'] == ''  # Initial heading, untouched by unsafe IDs.
 
@@ -197,7 +197,7 @@ def test_valid_recorded_run_exposes_evidence_without_conflating_signals():
     assert '4 / 5 shot-01, shot-03' in el['judge-rows']['text']
     assert el['weakest-shot']['text'] == 'shot-03'
     assert el['contact-sheet']['src'] == '/runs/az-0835/contact-sheet.jpg'
-    assert len(out['requests']) == 2
+    assert sorted(r['path'] for r in out['requests']) == ['/runs/az-0835/run.json', '/runs/campaigns.json', '/runs/index.json']
 
 
 def test_bad_identity_or_missing_run_never_leaves_stale_metrics():
@@ -229,7 +229,7 @@ def test_path_allowlist_null_scores_and_untrusted_text():
 def test_get_json_rejects_non_public_paths_before_fetch(page):
     out=execute(page,action="Promise.all(['//evil.invalid/x','/runs/../private','/runs/x/finished.mp4','/api/render',null].map(p=>getJSON(p).then(()=>false,()=>true)))")
     assert out['result']==[True]*5
-    assert all(req['path'] in ['/runs/index.json','/runs/scoreboard.json'] for req in out['requests'])
+    assert all(req['path'] in ['/runs/index.json','/runs/scoreboard.json','/runs/campaigns.json'] for req in out['requests'])
 
 
 def test_picker_fetches_are_race_safe_and_clear_previous_data():
@@ -266,3 +266,18 @@ def test_scoreboard_shows_real_cohort_denominator_and_coverage():
     out=execute(page,fixtures); el=out['elements']
     assert el['cost-clip']['text']=='N/A' and el['qa-rate']['text']=='N/A'
     assert 'Incomplete cost' in el['cost-note']['text']
+
+
+def test_campaign_slots_show_only_real_bound_metrics():
+    from pipelines.ffmpeg.campaigns import DEFAULT, project
+    from copy import deepcopy
+    manifest=deepcopy(DEFAULT)
+    manifest['variants'][0]['episode_id']='az-0835'
+    verified=summary();verified['scores']={'Q':.75,'D':1}
+    campaigns={'schema_version':'1.0','campaigns':[project(manifest,[verified])]}
+    out=execute(Page('studio.html'),{'/runs/index.json':index([summary()]),'/runs/az-0835/run.json':run_data(),'/runs/campaigns.json':campaigns})
+    text=out['elements']['campaign-slots']['text']
+    assert 'Sedona with kids overlays' in text and 'Q: 0.750' in text
+    assert 'Halloween Uptown' in text and 'BellRock resort' in text
+    assert text.count('Q:')==1 and 'planned' in text
+    assert all(req['opts']['method']=='GET' for req in out['requests'])

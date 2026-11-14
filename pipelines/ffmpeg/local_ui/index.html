@@ -12,6 +12,7 @@
 <body>
 <header><div><p class="eyebrow">FrameFoundry / Local studio</p><h1>Footage in. A story out.</h1></div><nav role="tablist" aria-label="Studio views"><button id="studioTab" role="tab" aria-controls="studio" aria-selected="true">Studio</button><button id="scoreboardTab" role="tab" aria-controls="scoreboard" aria-selected="false">Scoreboard</button></nav></header>
 <main>
+<section class="panel" aria-labelledby="campaign-title" style="margin-bottom:24px"><h2 id="campaign-title">Arizona Reels · Campaign</h2><p class="muted">Three planned variants. Labels provide context, not geographic proof. Only explicitly bound Episodes supply evidence.</p><div id="campaign-slots" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px"><p>Sedona with kids overlays · 45 s · Planned</p><p>Halloween Uptown · 15 s · Planned</p><p>BellRock resort · 15 s · Planned</p></div><p id="campaign-state" role="status">Loading Campaign bindings…</p></section>
 <div id="notice" class="message" role="status" aria-live="polite" hidden></div>
 <button id="reconnect" hidden>Check server again (GET only)</button>
 <button id="acknowledge" hidden>I verified no job started; allow a new explicit submission</button>
@@ -199,6 +200,33 @@ $('video').addEventListener('error',()=>{ text('videoMissing','Finished clip cou
 $('contactSheet').addEventListener('error',()=>{ text('contactMissing','Contact sheet could not be loaded.'); $('contactMissing').hidden=false; });
 async function config() { try { state.config=await api('/api/config'); $('voiceover').disabled=!state.config.voiceover_available; text('voiceoverStatus',state.config.voiceover_available ? 'Available · optional, off by default.' : 'Unavailable · provider not configured.'); } catch(error) { notice('Configuration unavailable: '+error.message,true); text('voiceoverStatus','Availability unknown.'); } lock(); }
 (async()=>{ await config(); await sync(); })();
+
+async function loadCampaign() {
+ const slots=document.getElementById('campaign-slots'), status=document.getElementById('campaign-state');
+ try {
+  const response=await fetch('/api/campaigns',{method:'GET',cache:'no-store',redirect:'error'});
+  if(!response.ok)throw new Error('Unavailable');
+  const data=await response.json(), campaign=data.campaigns && data.campaigns[0];
+  if(data.schema_version!=='1.0' || !campaign || campaign.id!=='arizona-reels' || !Array.isArray(campaign.variants) || campaign.variants.length!==3)throw new Error('Invalid');
+  slots.replaceChildren();
+  for(const variant of campaign.variants) {
+   const card=document.createElement('article'), heading=document.createElement('h3'), detail=document.createElement('p');
+   heading.textContent=String(variant.label).slice(0,80)+' · '+variant.target_seconds+' s target';
+   const allowed=['planned','failed','unavailable','active','available','verified'];
+   detail.textContent=allowed.includes(variant.status) ? variant.status : 'unavailable';
+   card.append(heading,detail);
+   const eid=variant.episode_id;
+   if(typeof eid==='string' && /^[a-z0-9][a-z0-9-]{0,63}$/.test(eid)) {
+    const binding=document.createElement('p');binding.textContent='Bound Episode: '+eid;card.append(binding);
+    const button=document.createElement('button');button.type='button';button.textContent='Inspect bound Episode';button.addEventListener('click',()=>select(eid));card.append(button);
+   }
+   if(variant.metrics) { const m=document.createElement('p');m.textContent='Q: '+(number(variant.metrics.Q)?variant.metrics.Q.toFixed(3):'N/A')+' · D: '+(number(variant.metrics.D)?variant.metrics.D.toFixed(3):'N/A');card.append(m); }
+   slots.append(card);
+  }
+  status.textContent='Campaign bindings loaded. No generation was started.';
+ } catch(_) { status.textContent='Campaign data unavailable. Planned slots above are not claims of completed output.'; }
+}
+loadCampaign();
 </script>
 </body>
 </html>
