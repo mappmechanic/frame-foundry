@@ -100,6 +100,9 @@ def test_real_burn_and_receipt_detects_mutation(tmp_path,monkeypatch,limited_fil
     subprocess.run(['ffmpeg','-v','error','-y','-ss','3.0','-i',str(output),'-frames:v','1',str(image)],check=True,capture_output=True)
     cut=Image.open(image).convert('RGB').crop((0,230,1080,700))
     assert sum(b<100 for r,g,b in cut.getdata())==0
+    subprocess.run(['ffmpeg','-v','error','-y','-ss','5.0','-i',str(output),'-frames:v','1',str(image)],check=True,capture_output=True)
+    later=Image.open(image).convert('RGB').crop((0,230,1080,700))
+    assert sum(r>220 and g>220 and b>220 for r,g,b in later.getdata())>300
     spec['overlays']['cards'][0]['y']=0
     checks={c['name']:c['status'] for c in overlays.verify(spec,output,[3000],9000)}
     assert checks['overlay_safe_area']=='fail' and checks['overlay_render_binding']=='fail'
@@ -198,3 +201,8 @@ def test_section_label_never_bridges_ungrounded_clip(tmp_path,monkeypatch):
     timeline,amended=assembler.build_timeline(spec,analysis)
     compiled=overlays.compile_cards(amended,analysis,timeline,tmp_path)
     assert [c['kind'] for c in compiled['overlays']['cards']]==['title']
+
+
+def test_large_landscape_title_uses_fitting_upper_third_layout():
+    card=overlays.layout('Things to do in Sedona with Kids',1920,1080)
+    assert card['cap_height']>=65 and card['y']+card['height']+8<=360

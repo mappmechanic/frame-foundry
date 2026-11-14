@@ -72,7 +72,8 @@ def layout(text,width,height,position='top'):
         if all(len(line)<=42 for line in lines):options.append(lines)
     if not options:
         text=text[:82]+'…';options=[[text[:41],text[41:83]]]
-    lines=min(options,key=lambda lines:max(font.getlength(line) for line in lines))
+    fitting=[lines for lines in options if sum(font.getbbox(line)[3]-font.getbbox(line)[1] for line in lines)+20*(len(lines)-1)+64+8<=math.floor(height/3)-math.ceil(height*.12)]
+    lines=min(fitting or options,key=lambda lines:max(font.getlength(line) for line in lines))
     missing=bytes(font.getmask('\uffff'))
     if any(not c.isspace() and bytes(font.getmask(c))==missing for c in '\n'.join(lines)):
         raise StageError('OVERLAY_GLYPH','assembler','Configured font cannot render the overlay text')
