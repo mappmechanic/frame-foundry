@@ -195,7 +195,9 @@ def test_optional_genuine_pixels_measure_difference_not_detector_accuracy(tmp_pa
     cv = pytest.importorskip('cv2')
     pytest.importorskip('numpy')
     cues = analyze_visual_cues([source(tmp_path, colors=(0, 255, 255))], tmp_path)['source-0001']
-    assert cv.getNumThreads() == 1 and not cv.ocl.useOpenCL()
+    # getNumThreads reports CPU capacity on Apple's dispatch backend, not
+    # the requested concurrency. Mock contract tests assert setNumThreads(1).
+    assert not cv.ocl.useOpenCL()
     assert all(not c['method'].startswith('unavailable:') for c in cues)
     assert cues[0]['motion'] is None
     assert cues[1]['motion'] == pytest.approx(1.0)
