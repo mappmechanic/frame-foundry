@@ -326,3 +326,12 @@ CLI `status=PASS` means QA and all eval gates pass. `result=partial` is retained
 as a content-coverage label and `coverage_note` spells out its limitations; it
 is not a contradiction of technical success. Missing eval evidence prints
 `QA_PASS_EVAL_INCOMPLETE`, not a false complete pass.
+
+`duration_evidence` in the CLI summary distinguishes raw `source_duration_ms`
+(and `source_count`), the source-bounded union `usable_short_windows_ms`, and
+`selected_raw_duration_ms` / independently measured `selected_encoded_duration_ms`.
+Usable windows can exclude long connected speech or tiny gaps; they are not a
+claim that all raw footage was selected or semantically inspected. A shortlist
+is preview evidence only, never total available footage. Partial-coverage notes
+include the locally computed totals, replacing unverified model duration claims
+while retaining missing-content and ASR-coverage limitations.

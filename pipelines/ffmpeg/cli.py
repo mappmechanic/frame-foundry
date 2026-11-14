@@ -222,9 +222,19 @@ def _run_main(argv=None):
         evaluation_path=Path(args.episodes_root)/report['episode_id']/'eval-report.json'
         evaluation=read_json(evaluation_path) if evaluation_path.is_file() else None
         metrics=dict(Q=evaluation['scores']['Q'],J=evaluation['scores']['J'],D=evaluation['scores']['D'],G=evaluation['scores']['G'],quality_per_dollar=evaluation['model_cost']['quality_per_dollar']) if evaluation else dict(Q=None,J=None,D=None,G=None,quality_per_dollar=None)
+        durations=None
+        directory=Path(args.episodes_root)/report['episode_id']
+        if (directory/'analysis.json').is_file() and (directory/'narrative-spec.json').is_file():
+            from . import teaser_edit
+            analysis=read_json(directory/'analysis.json');spec=read_json(directory/'narrative-spec.json')
+            pool=teaser_edit.short_candidates(analysis,analysis.get('candidates',[])) if teaser_edit.enabled(analysis) else analysis.get('candidates',[])
+            durations=teaser_edit.duration_evidence(analysis,pool,spec['segments'])
+            durations['selected_encoded_duration_ms']=report.get('actual_duration_ms')
         summary_status='PASS' if report['passed'] and metrics['G']==1 else 'QA_PASS_EVAL_INCOMPLETE' if report['passed'] else 'FAIL'
         coverage_note='Partial content coverage, not a technical failure: '+ '; '.join(report['coverage']['limitations']) if report['passed'] and report['coverage']['status']=='partial' else None
-        print(json.dumps(dict(status=summary_status,coverage_note=coverage_note,evaluation=metrics,episode_id=report['episode_id'],result=report['result'],passed=report['passed'],error=report['error'],output_path=report['output_path'],diagnostic_path=report.get('diagnostic_path'),tokens=dict(input=sum(c['input_tokens'] or 0 for c in report['ai_usage']),output=sum(c['output_tokens'] or 0 for c in report['ai_usage']),complete=all(c['input_tokens'] is not None and c['output_tokens'] is not None for c in report['ai_usage'] if c['status']!='blocked' and c['role'] not in ('transcription','tts'))),cost=report['cost'],goal_judge=report['goal_judge'],coverage=report['coverage'])))
+        if coverage_note and durations:
+            coverage_note+=f". Local duration evidence: {durations['source_duration_ms']/1000:.3f}s raw across {durations['source_count']} clips; {durations['usable_short_windows_ms']/1000:.3f}s usable short windows; {(durations['selected_encoded_duration_ms'] or 0)/1000:.3f}s selected output"
+        print(json.dumps(dict(status=summary_status,coverage_note=coverage_note,duration_evidence=durations,evaluation=metrics,episode_id=report['episode_id'],result=report['result'],passed=report['passed'],error=report['error'],output_path=report['output_path'],diagnostic_path=report.get('diagnostic_path'),tokens=dict(input=sum(c['input_tokens'] or 0 for c in report['ai_usage']),output=sum(c['output_tokens'] or 0 for c in report['ai_usage']),complete=all(c['input_tokens'] is not None and c['output_tokens'] is not None for c in report['ai_usage'] if c['status']!='blocked' and c['role'] not in ('transcription','tts'))),cost=report['cost'],goal_judge=report['goal_judge'],coverage=report['coverage'])))
         return 0 if report['passed'] else 1
     except StageError as e:print(e);return 2
     except KeyboardInterrupt:return 130

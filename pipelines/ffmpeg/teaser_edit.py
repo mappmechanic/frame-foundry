@@ -2,6 +2,7 @@
 from copy import deepcopy
 import hashlib
 import math
+import re
 from itertools import permutations
 from .render import output_frames
 
@@ -76,6 +77,45 @@ def short_candidates(analysis, base):
                 c['provenance']=[dict(source_id=sid,start_ms=a,end_ms=b)]
                 result.append(c)
     return result
+
+
+def duration_evidence(analysis, candidates, segments=()):
+    """Local SSOT: raw sources, union of usable source windows, selected edit.
+
+    Candidate counts/shortlists are evidence breadth, never footage availability.
+    Overlapping/duplicated windows must not inflate usable source duration.
+    """
+    sources={s['source_id']:s['duration_ms'] for s in analysis['sources']}
+    windows={sid:[] for sid in sources}
+    for c in candidates:
+        sid=c['source_id']
+        if sid in sources:
+            a,b=max(0,c['start_ms']),min(sources[sid],c['end_ms'])
+            if a<b:windows[sid].append((a,b))
+    usable=0
+    for intervals in windows.values():
+        end=-1
+        for a,b in sorted(intervals):
+            usable+=max(0,b-max(a,end));end=max(end,b)
+    lengths=[s['raw_end_ms']-s['raw_start_ms'] for s in segments]
+    return dict(source_duration_ms=sum(sources.values()),source_count=len(sources),
+                usable_short_windows_ms=usable,local_candidate_count=len(candidates),
+                selected_raw_duration_ms=sum(lengths),
+                selected_encoded_duration_ms=round(sum(output_frames(n/1000) for n in lengths)*1000/30))
+
+
+def model_duration_claim(text):
+    """Quantitative duration/availability claims belong to local code, not prose.
+
+    Keep unrelated missing-content/ASR limitations; do not require one particular
+    model wording (the live 'total available footage is only about 15 seconds').
+    """
+    text=text.lower()
+    if any(t in text for t in ('duration','insufficient footage','not enough footage','footage is less','shortfall','shorter','too short')):
+        return True
+    quantity=bool(re.search(r'\b(seconds?|secs?|minutes?|mins?|milliseconds?|ms)\b|\b\d+(?:\.\d+)?\s*[sm]\b',text))
+    subject=bool(re.search(r'\b(footage|available|usable|selected|selections?|shortlist|candidates?|material|clips?|video|target)\b',text))
+    return quantity and subject
 
 
 def hook(candidate,labels=()):
@@ -283,11 +323,12 @@ def complete(analysis,intent,response,pool):
     # silently remove the qualifying frame or detector cue.
     ordered=enforce_closing(ordered,pool,semantic,blocked)
     result['segments']=[s for _,s,_ in ordered]
-    total=sum(s['duration_ms'] for s in analysis['sources'])
-    usable=sum(c['end_ms']-c['start_ms'] for c in pool)
-    result['assumptions'].append(f'Source duration {total}ms; short speech/b-roll window coverage {usable}ms; selected encoded duration {frames*1000/30:.0f}ms. Eight-window model view is not total footage.')
+    durations=duration_evidence(analysis,pool,result['segments'])
+    total=durations['source_duration_ms'];usable=durations['usable_short_windows_ms']
+    result['assumptions']=[a for a in result['assumptions'] if not model_duration_claim(a)]
+    result['assumptions'].append(f"Local duration evidence: source {total}ms across {durations['source_count']} clips; usable short speech/b-roll window union {usable}ms; selected raw {durations['selected_raw_duration_ms']}ms; selected encoded {durations['selected_encoded_duration_ms']}ms. Eight-window model view is not total footage.")
     result['assumptions'].append('Short word-safe reconciliation/duration completion may reorder the hook and add locally ranked footage beyond model evidence; speech guards remain 80ms/120ms')
-    limitations=[l for l in result['coverage']['limitations'] if not any(t in l.lower() for t in ('duration','footage is less','insufficient footage','shorter','shortfall'))]
+    limitations=[l for l in result['coverage']['limitations'] if not model_duration_claim(l)]
     if frames<target_frames:limitations.append(f'Short protected-speech/b-roll coverage cannot fill target: {target_frames-frames} output frames short; raw source duration {total}ms is not the usable-selection duration')
     if not hook(ordered[0][0],ordered[0][2]):limitations.append('Hook constraint unavailable: no measured people/person, evidence-backed action, or high-motion window found')
     closing=[closing_qualifies(c,s,l) for c,s,l in ordered[-2:]]

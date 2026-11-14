@@ -34,7 +34,7 @@ will coalesce into a long shot. When the Goal is a family trip, prioritize peopl
 shared experiences, scenic destinations and activities over static rooms or TV
 screens unless those are explicitly central to the Goal. Open with a meaningful
 hook, develop the trip, and close with a payoff. Do not impose this family-trip
-preference on unrelated Goals. Samples are not exhaustive inspection. Return optional semantic_labels per segment only when supported by its in-window tile: people, action, scenic_wide, interior, screen. First shot must feature people/action or measured high motion. Last one or ideally two shots must mirror the hook with evidenced people/faces or scenic_wide payoff (an action label alone is insufficient), never dark or low-sharpness filler; high motion alone is not a closing qualifier. If unavailable, report partial coverage rather than invent labels. Prefer scenic wides and activity; penalize static interiors/screens except meaningful people/action. Do not claim eight supplied candidates represent all footage. Do not add unlisted fields.'''
+preference on unrelated Goals. Samples are not exhaustive inspection. Return optional semantic_labels per segment only when supported by its in-window tile: people, action, scenic_wide, interior, screen. First shot must feature people/action or measured high motion. Last one or ideally two shots must mirror the hook with evidenced people/faces or scenic_wide payoff (an action label alone is insufficient), never dark or low-sharpness filler; high motion alone is not a closing qualifier. If unavailable, report partial coverage rather than invent labels. Prefer scenic wides and activity; penalize static interiors/screens except meaningful people/action. Use duration_evidence for raw source and usable durations; never infer total available footage from shortlist length. Quantitative duration limitations are computed locally. Do not claim eight supplied candidates represent all footage. Do not add unlisted fields.'''
 _RESPONSE_SCHEMA = {
     'type': 'object', 'additionalProperties': False,
     'required': ['interpretation', 'assumptions', 'segments', 'coverage'],
@@ -413,11 +413,11 @@ def plan_teaser(ctx: EpisodeContext, analysis: dict, *, provider=_DEFAULT_PROVID
                 rows, images = _compact_evidence(ctx,analysis,directory,candidates)
                 payload = dict(goal=ctx.goal, constraints=dict(target_duration_ms=intent.target_duration_ms, aspect_ratio=intent.aspect_ratio),
                     candidates=rows,response_schema=_RESPONSE_SCHEMA)
-                if teaser_edit.enabled(analysis):payload['duration_evidence']=dict(source_duration_ms=sum(s['duration_ms'] for s in analysis['sources']),usable_short_windows_ms=sum(c['end_ms']-c['start_ms'] for c in candidates),local_candidate_count=len(candidates),shortlist_duration_ms=sum(c['end_ms']-c['start_ms'] for c in rows))
+                if teaser_edit.enabled(analysis):payload['duration_evidence']=dict(teaser_edit.duration_evidence(analysis,candidates),shortlist_duration_ms=teaser_edit.duration_evidence(analysis,rows)['usable_short_windows_ms'])
                 if retry_fix is not None:payload['fix_instruction']=str(retry_fix)[:160]
                 # Cache only validated source-backed decisions, never media or credentials.
                 from .evaluator import footage_fingerprint
-                identity=dict(footage=footage_fingerprint(analysis['sources']),goal=ctx.goal,provider=getattr(provider,'provider',None),model=getattr(provider,'model',None),protocol='compact-planner-5-protected-closing-v2',transcription_status=analysis.get('transcription_status'),candidates=rows,fix=retry_fix)
+                identity=dict(footage=footage_fingerprint(analysis['sources']),goal=ctx.goal,provider=getattr(provider,'provider',None),model=getattr(provider,'model',None),protocol='compact-planner-6-local-duration-closing-v2',transcription_status=analysis.get('transcription_status'),candidates=rows,fix=retry_fix)
                 key=hashlib.sha256(json.dumps(identity,sort_keys=True).encode()).hexdigest()
                 cache=Path(os.environ.get('FRAMEFOUNDRY_CACHE_DIR',str(Path(__file__).resolve().parents[2]/'.inference-cache')))/'planner'/f'{key}.json'
                 data=None
