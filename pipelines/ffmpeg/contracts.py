@@ -18,6 +18,7 @@ class EpisodeContext:
     fixture_mode: bool = False
     target_seconds: float | None = None
     aspect_override: str | None = None
+    decider_mode: str = 'llm'
     overlay_mode: bool | None = None
     overlay_sections: list[str] = field(default_factory=list)
 
@@ -105,7 +106,8 @@ def usage_summary(episode_dir):
             tts=read_json(tts_path)['calls']
             calls.extend(dict(c,input_tokens=None,output_tokens=None) for c in tts)
         fields=['call_id','role','provider','model','status','input_tokens','output_tokens','cost_usd','cost_status','reserved_usd','error']
-        clean=[{k:c.get(k) for k in fields} for c in calls]
+        extra_fields=['decision_stage', 'requested_mode', 'effective_mode', 'fallback_reason', 'prompt_cache_key', 'latency_seconds', 'cached_input_tokens', 'cache_write_tokens']
+        clean=[dict({k:c.get(k) for k in fields},**{k:c[k] for k in extra_fields if k in c}) for c in calls]
         schema=read_json(Path(__file__).resolve().parents[2]/'schemas'/'qa-report.schema.json')
         Draft202012Validator(schema['properties']['ai_usage']).validate(clean)
         total=sum(c['cost_usd'] or 0 for c in clean)

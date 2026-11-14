@@ -38,7 +38,8 @@ def _judge_repair_fix(evaluation):
     return fix.strip()[:160] if weak else None
 
 
-def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixture=None,provider='env',visual_only=False,evals_root=None,eval_labels=None,planner_retry=True,asr_provider='auto',voiceover=False,repair_from=None,target_seconds=None,aspect=None,keep_work=False,overlays=None,sections=None):
+def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixture=None,provider='env',visual_only=False,evals_root=None,eval_labels=None,planner_retry=True,asr_provider='auto',voiceover=False,repair_from=None,target_seconds=None,aspect=None,keep_work=False,overlays=None,sections=None,decider='llm'):
+    if decider not in ('llm','heuristic','decisions'):raise StageError('DECIDER_INVALID','planner','Unsupported decider')
     if visual_only and transcript_fixture is not None:raise StageError('INPUT_CONFLICT','refinery','Choose visual-only or a transcript fixture, not both')
     if not goal.strip():raise StageError('GOAL_EMPTY','refinery','Goal must not be blank')
     if not Path(footage_dir).is_dir():raise StageError('INPUT_EMPTY','refinery','Footage directory is unavailable')
@@ -53,7 +54,7 @@ def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixt
     with episode_lock(root):
         directory=resolve_episode(root,episode_id)
         if directory.exists():raise StageError('EPISODE_EXISTS','refinery','Episode identity already exists')
-        directory.mkdir();ctx=EpisodeContext(episode_id,directory,goal,fixture_mode=transcript_fixture is not None,target_seconds=target_seconds,aspect_override=aspect,overlay_mode=overlays,overlay_sections=list(sections or []));attempts=[]
+        directory.mkdir();ctx=EpisodeContext(episode_id,directory,goal,decider_mode=decider,fixture_mode=transcript_fixture is not None,target_seconds=target_seconds,aspect_override=aspect,overlay_mode=overlays,overlay_sections=list(sections or []));attempts=[]
         save_state(ctx,'accepted');report=None;evaluation=None;active_provider=None;planning_retried=False;first_eval_passed=None;last_result=None;next_changes=[]
         try:
             if voiceover:
@@ -66,11 +67,11 @@ def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixt
                 except ProviderError:active_provider=None
             budget_note=None
             cloud_asr_enabled=not visual_only and transcript_fixture is None and asr_provider!='local' and bool(os.environ.get('OPENAI_API_KEY','').strip())
-            if active_provider is not None or cloud_asr_enabled or voiceover:
+            if active_provider is not None or cloud_asr_enabled or voiceover or (decider=='decisions' and bool(os.environ.get('OPENAI_API_KEY','').strip())):
                 try:reserve_project_episode(Path(os.environ.get('FRAMEFOUNDRY_PROJECT_BUDGET_DIR',str(Path(__file__).resolve().parents[2]))),str(directory))
                 except ProviderBudgetError:raise
                 except ProviderError as e:
-                    if cloud_asr_enabled or voiceover:raise ProviderBudgetError('Project allowance unavailable; ASR and inference blocked') from None
+                    if cloud_asr_enabled or voiceover or decider=='decisions':raise ProviderBudgetError('Project allowance unavailable; ASR and inference blocked') from None
                     active_provider=None;budget_note=str(e)
             fixture=read_json(transcript_fixture) if transcript_fixture is not None else None
             def fixture_words(source):
@@ -237,6 +238,7 @@ def _run_main(argv=None):
     p.add_argument('--visual-only',action='store_true',help='Explicit diagnostic mode without ASR; speech integrity remains unverified')
     p.add_argument('--repair-from',help='Optional prior episode whose scored weakest source interval can be replaced locally with no paid call')
     p.add_argument('--overlays',action=argparse.BooleanOptionalAction,default=None,help='Burn in grounded title/section cards; auto-on for listed sections')
+    p.add_argument('--decider',choices=['decisions','llm','heuristic'],default='llm',help='Bounded selection experiment; generative Planner/VO unchanged')
     p.add_argument('--section',action='append',default=[],help='Ordered Goal section; repeat per item')
     p.add_argument('--voiceover',action='store_true',help='Opt in to cached ElevenLabs intro narration; requires ELEVENLABS_API_KEY')
     p.add_argument('--keep-work',action='store_true',help='Retain intermediate work media after successful delivery')
@@ -246,7 +248,7 @@ def _run_main(argv=None):
     def terminate(signum,frame):raise KeyboardInterrupt()
     old=signal.signal(signal.SIGTERM,terminate)
     try:
-        report=run_episode(args.footage_dir,args.goal,episodes_root=args.episodes_root,episode_id=args.episode,transcript_fixture=args.transcript_fixture,visual_only=args.visual_only,evals_root=args.evals_root,eval_labels=args.eval_labels,planner_retry=not args.no_planner_retry,asr_provider=args.asr_provider,voiceover=args.voiceover,repair_from=args.repair_from,target_seconds=args.duration_seconds,aspect=args.aspect,keep_work=args.keep_work,overlays=args.overlays,sections=args.section)
+        report=run_episode(args.footage_dir,args.goal,episodes_root=args.episodes_root,episode_id=args.episode,transcript_fixture=args.transcript_fixture,visual_only=args.visual_only,evals_root=args.evals_root,eval_labels=args.eval_labels,planner_retry=not args.no_planner_retry,asr_provider=args.asr_provider,voiceover=args.voiceover,repair_from=args.repair_from,target_seconds=args.duration_seconds,aspect=args.aspect,keep_work=args.keep_work,overlays=args.overlays,sections=args.section,decider=args.decider)
         evaluation_path=Path(args.episodes_root)/report['episode_id']/'eval-report.json'
         evaluation=read_json(evaluation_path) if evaluation_path.is_file() else None
         metrics=dict(Q=evaluation['scores']['Q'],J=evaluation['scores']['J'],D=evaluation['scores']['D'],G=evaluation['scores']['G'],quality_per_dollar=evaluation['model_cost']['quality_per_dollar']) if evaluation else dict(Q=None,J=None,D=None,G=None,quality_per_dollar=None)

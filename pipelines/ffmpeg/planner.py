@@ -422,11 +422,17 @@ def plan_teaser(ctx: EpisodeContext, analysis: dict, *, provider=_DEFAULT_PROVID
                     candidates=rows,response_schema=_RESPONSE_SCHEMA)
                 if teaser_edit.enabled(analysis):payload['duration_evidence']=dict(teaser_edit.duration_evidence(analysis,candidates),shortlist_duration_ms=teaser_edit.duration_evidence(analysis,rows)['usable_short_windows_ms'])
                 from .overlays import active,requested
+                from .decisions import selection_hints
+                decision_report=selection_hints(ctx,rows,images,requested(ctx)[1] if active(ctx) else ())
+                if decision_report['answers'] is not None:
+                    payload['bounded_decision_hints']=decision_report['answers']
+                    payload['decision_constraints']='Hints only; all evidence, sharpness, safety, speech and overlay gates still apply. Faces are not geometry or location proof.'
                 if active(ctx):payload['overlay_sections']=requested(ctx)[1]
                 if retry_fix is not None:payload['fix_instruction']=str(retry_fix)[:160]
                 # Cache only validated source-backed decisions, never media or credentials.
                 from .evaluator import footage_fingerprint
                 identity=dict(footage=footage_fingerprint(analysis['sources']),goal=ctx.goal,provider=getattr(provider,'provider',None),model=getattr(provider,'model',None),protocol='compact-planner-7-grounded-subjects-crop-closing-v2',transcription_status=analysis.get('transcription_status'),candidates=rows,fix=retry_fix)
+                if getattr(ctx,'decider_mode','llm')!='llm':identity.update(decider=ctx.decider_mode,decision_answers=decision_report['answers'])
                 if active(ctx):identity.update(overlay_protocol='goal-overlays-1',overlay_sections=requested(ctx)[1])
                 baseline=parse_goal(ctx.goal)
                 if (intent.target_duration_ms,intent.aspect_ratio)!=(baseline.target_duration_ms,baseline.aspect_ratio):
@@ -475,6 +481,14 @@ def plan_teaser(ctx: EpisodeContext, analysis: dict, *, provider=_DEFAULT_PROVID
         data = _pace_local_visual_response(analysis, _fallback(fallback_analysis, intent, cause))
         data = teaser_edit.complete(analysis,intent,data,candidates or []) if teaser_edit.enabled(analysis) else _complete_visual_duration(analysis, intent, data, candidates or [])
         spec = _reconstruct(ctx, analysis, intent, data, 'deterministic')
+    from .decisions import selection_hints
+    if not rows:
+        selection_hints(ctx,[],[],())
+    elif getattr(ctx,'decider_mode','llm')=='llm':
+        from .contracts import read_json
+        report=read_json(ctx.episode_dir/'decisions-report.json')
+        report.update(effective_mode='llm' if spec['planner_mode']=='llm' else 'heuristic',fallback_reason=None if spec['planner_mode']=='llm' else cause)
+        atomic_write_json(ctx.episode_dir/'decisions-report.json',report)
     from .overlays import attach
     attach(ctx,spec,data,rows)
     validate_narrative(spec, analysis)
