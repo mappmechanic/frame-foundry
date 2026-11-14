@@ -83,6 +83,10 @@ def test_real_burn_and_receipt_detects_mutation(tmp_path,monkeypatch):
     # Actual white glyphs occur in the safe top band, not just planned JSON.
     white=sum(r>220 and g>220 and b>220 for r,g,b in pixels.crop((0,230,1080,700)).getdata())
     assert white>300
+    # Transition frame has neither white text nor a lingering dark shadow.
+    subprocess.run(['ffmpeg','-v','error','-y','-ss','3.0','-i',str(output),'-frames:v','1',str(image)],check=True,capture_output=True)
+    cut=Image.open(image).convert('RGB').crop((0,230,1080,700))
+    assert sum(b<100 for r,g,b in cut.getdata())==0
     spec['overlays']['cards'][0]['y']=0
     checks={c['name']:c['status'] for c in overlays.verify(spec,output,[3000],6000)}
     assert checks['overlay_safe_area']=='fail' and checks['overlay_render_binding']=='fail'

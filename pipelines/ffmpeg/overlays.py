@@ -160,7 +160,7 @@ def burn(video,output,plan):
             escape=lambda p:str(p).replace('\\','\\\\').replace(':','\\:').replace("'", "\\'")
             alpha=f'if(lt(t,{s}),0,if(lt(t,{s+.2}),(t-{s})/.2,if(lt(t,{e-.15}),1,if(lt(t,{e}),({e}-t)/.15,0))))'
             y=f'{c["y"]}+8*(1-min(1,max(0,(t-{s})/.2)))'
-            filters.append(f"drawtext=fontfile='{escape(font)}':textfile='{escape(text)}':expansion=none:fontsize={c['fontsize']}:fontcolor=white:shadowcolor=black@0.65:shadowx=2:shadowy=2:line_spacing=4:x={c['x']}:y='{y}':alpha='{alpha}'")
+            filters.append(f"drawtext=fontfile='{escape(font)}':textfile='{escape(text)}':expansion=none:fontsize={c['fontsize']}:fontcolor=white:shadowcolor=black@0.65:shadowx=2:shadowy=2:line_spacing=4:x={c['x']}:y='{y}':alpha='{alpha}':enable='gte(n,{c['start_frame']})*lt(n,{c['end_frame']})'")
         if filters:
             _run(_ffmpeg()+['-i',str(video),'-vf',','.join(filters),'-map','0:v:0','-map','0:a:0','-c:v','libx264','-preset','fast','-crf','18','-pix_fmt','yuv420p','-threads','2','-c:a','copy',str(output)])
         else:
