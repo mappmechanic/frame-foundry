@@ -39,9 +39,10 @@ def _milliseconds(value, unit):
     return int(ms)
 
 
-def parse_goal(goal: str) -> GoalIntent:
+def parse_goal(goal: str, *, target_seconds=None, aspect=None) -> GoalIntent:
     if not isinstance(goal, str):
         _constraint('Goal must be text')
+    aspect_override=aspect
     assumptions = []
     ratios = re.findall(r'\b\d+\s*:\s*\d+\b', goal)
     ratios = [re.sub(r'\s', '', r) for r in ratios]
@@ -86,6 +87,18 @@ def parse_goal(goal: str) -> GoalIntent:
         assumptions.append('Conflicting aspect instructions: landscape 16:9 wins')
     elif not portrait and not landscape:
         assumptions.append('No aspect specified; use vertical 9:16')
+    if target_seconds is not None:
+        if isinstance(target_seconds,bool):_constraint('Explicit duration must be numeric')
+        try:override=Decimal(str(target_seconds))
+        except Exception:_constraint('Explicit duration must be numeric')
+        if not override.is_finite():_constraint('Explicit duration must be finite')
+        target=_milliseconds(str(override),'seconds')
+        assumptions.append(f'Explicit duration control overrides Goal duration: {target}ms')
+    if aspect_override is not None:
+        aspect=aspect_override
+        if aspect not in ('9:16','16:9'):_constraint('Unsupported aspect control')
+        assumptions.append(f'Explicit aspect control overrides Goal framing: {aspect}')
+    else:aspect= '16:9' if landscape else '9:16'
     for match in reversed(matches):
         text = text[:match.start()] + ' ' * (match.end() - match.start()) + text[match.end():]
     terms = list(dict.fromkeys(w.lower() for w in re.findall(r"[A-Za-z]+(?:'[A-Za-z]+)?", text) if w.lower() not in _STOP))

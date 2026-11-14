@@ -394,7 +394,7 @@ def _resolve_provider(provider, limitations):
         return None
 
 
-def evaluate_episode(episode_dir, *, provider=None, evals_root=None, labels=None, persist=True):
+def evaluate_episode(episode_dir, *, provider=None, evals_root=None, labels=None, persist=True, progress=None):
     """Evaluate one Episode directory and return a strict EvalReport dict.
 
     provider: None => no judge call; 'env' => LLMProvider.from_env(); else an
@@ -447,6 +447,7 @@ def evaluate_episode(episode_dir, *, provider=None, evals_root=None, labels=None
     else:
         active = _resolve_provider(provider, limitations)
         render = ctx['render']
+        if progress is not None:progress('judge')
         judge = eval_judge.run_judge(
             episode_dir=root, evals_root=evals_root, provider=active, goal=goal, shots=ctx['shots'],
             duration_ms=render['duration_ms'], aspect_ratio=spec.get('aspect_ratio'), render_path=render_path,

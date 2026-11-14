@@ -252,7 +252,7 @@ def _compact_evidence(ctx, analysis, directory, candidates=None):
             try:
                 with Image.open(_safe_path(ctx.episode_dir,c.get('canonical_frame_path') or c['frame_path'])) as image:
                     image=image.convert('RGB')
-                    view='center_crop_9_16' if parse_goal(ctx.goal).aspect_ratio=='9:16' else 'fit_16_9'
+                    view='center_crop_9_16' if parse_goal(ctx.goal,target_seconds=getattr(ctx,'target_seconds',None),aspect=getattr(ctx,'aspect_override',None)).aspect_ratio=='9:16' else 'fit_16_9'
                     image=ImageOps.fit(image,(90,160)) if view=='center_crop_9_16' else ImageOps.contain(image,(160,90))
                     tile=Image.new('RGB',(160,192),'black');tile.paste(image,((160-image.width)//2,0))
                     ImageDraw.Draw(tile).text((2,161),str(c['candidate_id'])[-8:],fill='white')
@@ -404,7 +404,7 @@ def _reconstruct(ctx, analysis, intent, response, mode):
 
 def plan_teaser(ctx: EpisodeContext, analysis: dict, *, provider=_DEFAULT_PROVIDER,retry_fix=None) -> dict:
     """Omitted provider uses environment; explicit None forces deterministic mode."""
-    intent = parse_goal(ctx.goal)
+    intent = parse_goal(ctx.goal,target_seconds=getattr(ctx,'target_seconds',None),aspect=getattr(ctx,'aspect_override',None))
     if analysis.get('episode_id') != ctx.episode_id or analysis.get('goal') != ctx.goal:
         raise StageError('PLAN_INVALID', 'planner', 'Analysis identity/goal differs from context')
     cause = 'No configured provider'
@@ -427,7 +427,7 @@ def plan_teaser(ctx: EpisodeContext, analysis: dict, *, provider=_DEFAULT_PROVID
                 if retry_fix is not None:payload['fix_instruction']=str(retry_fix)[:160]
                 # Cache only validated source-backed decisions, never media or credentials.
                 from .evaluator import footage_fingerprint
-                identity=dict(footage=footage_fingerprint(analysis['sources']),goal=ctx.goal,provider=getattr(provider,'provider',None),model=getattr(provider,'model',None),protocol='compact-planner-8-grounded-subject-aliases-framed-closing-v2',transcription_status=analysis.get('transcription_status'),candidates=rows,fix=retry_fix)
+                identity=dict(footage=footage_fingerprint(analysis['sources']),goal=ctx.goal,provider=getattr(provider,'provider',None),model=getattr(provider,'model',None),protocol='compact-planner-9-explicit-settings-grounded-closing-v2',target_duration_ms=intent.target_duration_ms,aspect_ratio=intent.aspect_ratio,transcription_status=analysis.get('transcription_status'),candidates=rows,fix=retry_fix)
                 key=hashlib.sha256(json.dumps(identity,sort_keys=True).encode()).hexdigest()
                 cache=Path(os.environ.get('FRAMEFOUNDRY_CACHE_DIR',str(Path(__file__).resolve().parents[2]/'.inference-cache')))/'planner'/f'{key}.json'
                 data=None

@@ -38,16 +38,18 @@ def _judge_repair_fix(evaluation):
     return fix.strip()[:160] if weak else None
 
 
-def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixture=None,provider='env',visual_only=False,evals_root=None,eval_labels=None,planner_retry=True,asr_provider='auto',voiceover=False,repair_from=None):
+def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixture=None,provider='env',visual_only=False,evals_root=None,eval_labels=None,planner_retry=True,asr_provider='auto',voiceover=False,repair_from=None,target_seconds=None,aspect=None):
     if visual_only and transcript_fixture is not None:raise StageError('INPUT_CONFLICT','refinery','Choose visual-only or a transcript fixture, not both')
     if not goal.strip():raise StageError('GOAL_EMPTY','refinery','Goal must not be blank')
     if not Path(footage_dir).is_dir():raise StageError('INPUT_EMPTY','refinery','Footage directory is unavailable')
+    from .goal_parser import parse_goal
+    parse_goal(goal,target_seconds=target_seconds,aspect=aspect)
     episode_id=episode_id or datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S-')+uuid.uuid4().hex[:6]
     root=Path(episodes_root).resolve()
     with episode_lock(root):
         directory=resolve_episode(root,episode_id)
         if directory.exists():raise StageError('EPISODE_EXISTS','refinery','Episode identity already exists')
-        directory.mkdir();ctx=EpisodeContext(episode_id,directory,goal,fixture_mode=transcript_fixture is not None);attempts=[]
+        directory.mkdir();ctx=EpisodeContext(episode_id,directory,goal,fixture_mode=transcript_fixture is not None,target_seconds=target_seconds,aspect_override=aspect);attempts=[]
         save_state(ctx,'accepted');report=None;evaluation=None;active_provider=None;planning_retried=False;first_eval_passed=None;last_result=None;next_changes=[]
         try:
             if voiceover:
@@ -114,7 +116,7 @@ def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixt
                         report.update(output_path='finished.mp4',timeline_path='timeline.otio',stage='delivery')
                         validate_report(report);atomic_write_json(directory/'qa-report.json',report)
                         from .evaluator import evaluate_episode
-                        evaluation=evaluate_episode(directory,provider=active_provider,evals_root=evals_root,labels=eval_labels,persist=False)
+                        evaluation=evaluate_episode(directory,provider=active_provider,evals_root=evals_root,labels=eval_labels,persist=False,progress=lambda stage:save_state(ctx,stage))
                         if first_eval_passed is None:first_eval_passed=evaluation['gates']['passed']
                         failed_gates={c['name'] for c in evaluation['gates']['checks'] if c['status']=='fail'}
                         repairable_eval=bool(failed_gates & {'duration_target','word_cut_integrity','black_frames','frozen_frames','repeated_shots'})
@@ -130,6 +132,7 @@ def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixt
                                     sort_keys=True, allow_nan=False))
                             planning_retried=True
                             fix=judge_fix or 'Repair failed deterministic gates: '+', '.join(sorted(failed_gates))
+                            save_state(ctx,'planner')
                             spec=plan_teaser(ctx,analysis,provider=active_provider,retry_fix=fix[:160])
                             if visual_only:
                                 spec['coverage']['status']='partial';spec['coverage']['limitations'].append('Speech-dependent coverage and word integrity unverified in explicit visual-only mode')
@@ -149,6 +152,7 @@ def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixt
                     if planner_retry and not planning_retried and active_provider is not None and index<3 and set(reasons)&{'timeline_and_padding','goal_duration','render_duration'}:
                         planning_retried=True
                         fix=('Repair technical QA: '+', '.join(reasons)+f'. Target {amended["target_duration_ms"]}ms; measured {report["actual_duration_ms"]}ms.')[:160]
+                        save_state(ctx,'planner')
                         spec=plan_teaser(ctx,analysis,provider=active_provider,retry_fix=fix)
                         if visual_only:
                             spec['coverage']['status']='partial';spec['coverage']['limitations'].append('Speech-dependent coverage and word integrity unverified in explicit visual-only mode')
@@ -187,7 +191,7 @@ def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixt
                     report['elapsed_seconds']=__import__('time').monotonic()-ctx.started
                     validate_report(report);atomic_write_json(directory/'qa-report.json',report)
                     if evaluation is None:
-                        evaluation=evaluate_episode(directory,provider=active_provider if report['passed'] else None,evals_root=evals_root,labels=eval_labels,persist=False)
+                        evaluation=evaluate_episode(directory,provider=active_provider if report['passed'] else None,evals_root=evals_root,labels=eval_labels,persist=False,progress=lambda stage:save_state(ctx,stage))
                     evaluation['first_try_passed']=evaluation['gates']['passed'] if first_eval_passed is None else first_eval_passed
                     judge=evaluation['judge']
                     if judge['status']=='scored':
@@ -218,11 +222,13 @@ def _run_main(argv=None):
     p.add_argument('--visual-only',action='store_true',help='Explicit diagnostic mode without ASR; speech integrity remains unverified')
     p.add_argument('--repair-from',help='Optional prior episode whose scored weakest source interval can be replaced locally with no paid call')
     p.add_argument('--voiceover',action='store_true',help='Opt in to cached ElevenLabs intro narration; requires ELEVENLABS_API_KEY')
+    p.add_argument('--duration-seconds',type=float,help='Explicit duration override, 5–120 seconds')
+    p.add_argument('--aspect',choices=['9:16','16:9'],help='Explicit aspect override without changing original Goal')
     args=p.parse_args(argv)
     def terminate(signum,frame):raise KeyboardInterrupt()
     old=signal.signal(signal.SIGTERM,terminate)
     try:
-        report=run_episode(args.footage_dir,args.goal,episodes_root=args.episodes_root,episode_id=args.episode,transcript_fixture=args.transcript_fixture,visual_only=args.visual_only,evals_root=args.evals_root,eval_labels=args.eval_labels,planner_retry=not args.no_planner_retry,asr_provider=args.asr_provider,voiceover=args.voiceover,repair_from=args.repair_from)
+        report=run_episode(args.footage_dir,args.goal,episodes_root=args.episodes_root,episode_id=args.episode,transcript_fixture=args.transcript_fixture,visual_only=args.visual_only,evals_root=args.evals_root,eval_labels=args.eval_labels,planner_retry=not args.no_planner_retry,asr_provider=args.asr_provider,voiceover=args.voiceover,repair_from=args.repair_from,target_seconds=args.duration_seconds,aspect=args.aspect)
         evaluation_path=Path(args.episodes_root)/report['episode_id']/'eval-report.json'
         evaluation=read_json(evaluation_path) if evaluation_path.is_file() else None
         metrics=dict(Q=evaluation['scores']['Q'],J=evaluation['scores']['J'],D=evaluation['scores']['D'],G=evaluation['scores']['G'],quality_per_dollar=evaluation['model_cost']['quality_per_dollar']) if evaluation else dict(Q=None,J=None,D=None,G=None,quality_per_dollar=None)
@@ -250,6 +256,9 @@ def main(argv=None):
         return 2
     args=list(sys.argv[1:] if argv is None else argv)
     if args and args[0]=='run': args=args[1:]
+    if args and args[0]=='serve':
+        from .local_server import main as serve_main
+        return serve_main(args[1:])
     if args and args[0] in ('eval','rate','scoreboard'):
         from .eval_cli import main as eval_main
         return eval_main(args)

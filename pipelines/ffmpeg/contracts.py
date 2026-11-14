@@ -16,6 +16,8 @@ class EpisodeContext:
     goal: str
     started: float = field(default_factory=time.monotonic)
     fixture_mode: bool = False
+    target_seconds: float | None = None
+    aspect_override: str | None = None
 
 class StageError(RuntimeError):
     def __init__(self, code, stage, message, source_id=None, repairable=False):

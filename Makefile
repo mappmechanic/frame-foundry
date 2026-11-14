@@ -2,7 +2,7 @@
 VENV ?= .venv
 PYTHON ?= $(VENV)/bin/python
 UV ?= $(if $(wildcard $(HOME)/.local/bin/uv),$(HOME)/.local/bin/uv,uv)
-.PHONY: setup test demo-arizona fetch-arizona
+.PHONY: setup test demo-arizona fetch-arizona ui
 
 # Explicitly recreate the environment; do not run during an active Episode.
 setup:
@@ -17,3 +17,7 @@ fetch-arizona:
 
 demo-arizona:
 	$(PYTHON) scripts/arizona_demo.py $(ARGS)
+
+# Local demo server; no environment recreation or paid call until Generate.
+ui:
+	$(PYTHON) -m pipelines.ffmpeg.cli serve $(ARGS)

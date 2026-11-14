@@ -383,3 +383,78 @@ replacement exists (or the old weak interval is no longer selected), it records
 a no-op in narrative/QA assumptions. Crop-matched semantic tags are model
 inferences, not an independent full-scene recognition guarantee; legacy generic
 intros remain evaluable under their original unversioned protocol.
+
+
+## Local demo UI
+
+From this checkout on your Mac (Python 3.13 setup remains unchanged):
+
+```sh
+make setup
+set -a; source .env; set +a
+export FRAMEFOUNDRY_LLM_PROVIDER=openai
+make ui
+```
+
+Then open `http://127.0.0.1:8765`. Equivalently use
+`.venv/bin/framefoundry serve --port 8765`. The server binds only to loopback;
+there is no login or cloud deployment. Start it after loading your existing
+provider environment. Do not put credentials in the browser. Voiceover is
+optional/off by default and unavailable when its configuration is missing.
+
+Choose files/folder or paste a local folder path (recommended for 2GB+ footage:
+no upload/copy). Uploads are disk-spooled and copied in 1 MiB chunks into
+`~/.local/share/framefoundry/ui/<output-root-fingerprint>/uploads/`, outside Git.
+Folder-relative filenames are validated and flattened with unique prefixes for
+the existing nonrecursive Refinery. Maximum 40 MP4/MOV videos; existing 30-minute
+pipeline duration limit still applies. Default total upload cap: 32 GiB.
+`make ui ARGS='--max-upload-gib 64 --port 8766'` changes the transfer cap/port.
+These are supported limits, not measured throughput on a 32 GiB live upload.
+
+For Arizona history in a different output location:
+
+```sh
+make ui ARGS='--episodes-root /absolute/path/to/episodes --evals-root /absolute/path/to/evals'
+```
+
+Create defaults to unset duration, 9:16, voiceover off. Unset duration follows
+Goal interpretation (45 seconds if unspecified); explicit 5–120 second duration
+and aspect controls win over conflicting *supported* Goal instructions. The
+original Goal is preserved in reports. Unsupported Goal constraints still fail
+preflight rather than silently being rewritten. CLI generation also accepts
+`--duration-seconds 45 --aspect 9:16`.
+
+One CLI subprocess runs at a time; the existing root-level CLI lock and a UI
+server ownership lock prevent concurrent work. UI demo jobs use the configured
+API cap or $0.10, whichever is stricter, and `--no-planner-retry`; no extra
+provider calls occur during polling, previews, history or scoreboard browsing.
+Existing ASR/TTS/Planner/Judge limits, caches and project allowance remain in
+force. Pending reservations are not incurred billing; estimated and unknown
+cost remain labeled. Optional GitHub REST factory metadata is read only when
+rendering the Scoreboard, never through a model.
+
+Browser refresh reconnects using GETs. Generation/regeneration require an
+explicit submission. Lost submission responses are not automatically retried.
+Shutdown interrupts owned process groups; restart preserves artifacts and marks
+unfinished UI jobs interrupted without resuming paid work. Failed/unknown calls
+retain their durable allowance reservations. Raw footage remains read-only;
+media and upload caches must never be committed. Failed runs remain in History.
+
+Preview uses final OTIO shot timestamps (not new inferred chapters), contact
+sheet, Planner reasons, VO text, QA and strict evaluation metrics. Missing/corrupt
+reports and stale render hashes are disclosed, not scored as zero. Only current,
+nonempty passing clips are offered as finished downloads. Feedback creates a
+new episode and leaves prior outputs unchanged. If original media is gone,
+regeneration is blocked before provider calls. Historical Arizona episodes
+appear only when their artifacts are present in the selected local root.
+
+Scoreboard now starts with a compact presenter summary (Q trend, cohort AI
+cost/shipped, actual render QA pass rate, median first PR-title coverage, verified
+local shipments). Detailed methods/disclosures are collapsed but retained.
+Factory title-coverage times are the audited seven-foundation-WO cohort, not
+completion or merge, and not the new UI work orders. Shipped means hash-verified
+local output, not social publishing. macOS `/tmp` directory aliases are resolved
+for `--html`; final output-file symlinks and input/artifact overwrites remain
+blocked. Closed subject aliases such as `night parade` and `people` are normalized
+only from supplied Planner evidence; the eight-window shortlist prefers usable
+in-window frames. Narration still never infers subjects from Goal or filenames.
