@@ -2,10 +2,10 @@
   "schema_version": 1,
   "fetched_at": "2026-11-14T14:40:16.234127+00:00",
   "notes": [
-    "Audited source values supplied by the parent implementation task: Factory tools confirmed seven work orders and their creation timestamps on 2026-11-14; all seven were In Review, not done.",
+    "Factory Work Orders creation timestamps and statuses were verified on 2026-11-14. Scope: seven PR #1 work orders, all In Review, not done.",
     "GitHub PR #1 initial title explicitly covered WO-1 through WO-6. Its recorded rename event at 2026-11-14T09:17:31Z added WO-7. First-recorded-title coverage is a proxy, not implementation, completion, or merge time.",
     "First coverage is frozen to audited evidence, not inferred from current title, git history, or PR open time for later tickets. No git commits are mapped to tickets.",
-    "GitHub current commit count and state were not supplied in the audit and remain null unless generation-time gh REST verifies them. This snapshot is not live Mac episode data."
+    "Current GitHub commit count and state require generation-time gh REST; absent verified values are N/A. This audit contains no live Mac episode data."
   ],
   "pull_request": {
     "number": 1,

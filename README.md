@@ -365,3 +365,21 @@ AI cost per shipped episode includes failed-episode cohort overhead and exposes
 unknown billing. The manual-minutes flag estimates gross manual editing effort
 avoided at N minutes × shipped episodes / 60, assuming zero hands-on automatic
 editing and excluding prep/review/debugging; it is not measured engineer labor.
+
+Optional free weakest-shot repair uses an existing scored episode:
+
+```sh
+make demo-arizona ARGS='--episode az-0700 --asr-provider auto --voiceover --repair-from az-0600'
+```
+
+It validates the prior finished-render hash, scored judge, original-footage
+fingerprint, Goal/aspect/target and actual weakest shot's source interval. It
+never blindly swaps the eighth shot in a newly reordered cut. An unused short
+b-roll window must have in-window CPU people evidence, higher sparse motion,
+adequate exposure/sharpness and duration-matched output. Hook/closing, protected
+speech and narrated subjects remain intact. This happens before the new render's
+ordinary judge, with no extra paid call or stale J/Q inheritance. If no safe
+replacement exists (or the old weak interval is no longer selected), it records
+a no-op in narrative/QA assumptions. Crop-matched semantic tags are model
+inferences, not an independent full-scene recognition guarantee; legacy generic
+intros remain evaluable under their original unversioned protocol.

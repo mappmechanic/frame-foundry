@@ -38,7 +38,7 @@ def _judge_repair_fix(evaluation):
     return fix.strip()[:160] if weak else None
 
 
-def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixture=None,provider='env',visual_only=False,evals_root=None,eval_labels=None,planner_retry=True,asr_provider='auto',voiceover=False):
+def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixture=None,provider='env',visual_only=False,evals_root=None,eval_labels=None,planner_retry=True,asr_provider='auto',voiceover=False,repair_from=None):
     if visual_only and transcript_fixture is not None:raise StageError('INPUT_CONFLICT','refinery','Choose visual-only or a transcript fixture, not both')
     if not goal.strip():raise StageError('GOAL_EMPTY','refinery','Goal must not be blank')
     if not Path(footage_dir).is_dir():raise StageError('INPUT_EMPTY','refinery','Footage directory is unavailable')
@@ -80,6 +80,9 @@ def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixt
             atomic_write_json(directory/'analysis.json',analysis)
             if fixture and any(w['source_id'] not in {s['source_id'] for s in analysis['sources']} for w in fixture['words']):raise StageError('FIXTURE_INVALID','refinery','Unknown fixture word source')
             save_state(ctx,'planner');spec=plan_teaser(ctx,analysis,provider=active_provider)
+            if repair_from:
+                from .free_repair import repair_from as reuse_judge
+                spec=reuse_judge(spec,analysis,episodes_root=root,episode_id=repair_from,keep_intro=voiceover)
             if visual_only:
                 spec['assumptions'].append('Explicit visual-only diagnostic mode: speech not transcribed; word integrity unverified')
                 spec['coverage']['status']='partial'
@@ -213,12 +216,13 @@ def _run_main(argv=None):
     p.add_argument('--evals-root',type=Path);p.add_argument('--eval-labels',type=Path);p.add_argument('--no-planner-retry',action='store_true')
     p.add_argument('--asr-provider',choices=['auto','local','openai'],default='auto',help='Prefer local WhisperX; auto falls back to OpenAI word timestamps when a key is configured')
     p.add_argument('--visual-only',action='store_true',help='Explicit diagnostic mode without ASR; speech integrity remains unverified')
+    p.add_argument('--repair-from',help='Optional prior episode whose scored weakest source interval can be replaced locally with no paid call')
     p.add_argument('--voiceover',action='store_true',help='Opt in to cached ElevenLabs intro narration; requires ELEVENLABS_API_KEY')
     args=p.parse_args(argv)
     def terminate(signum,frame):raise KeyboardInterrupt()
     old=signal.signal(signal.SIGTERM,terminate)
     try:
-        report=run_episode(args.footage_dir,args.goal,episodes_root=args.episodes_root,episode_id=args.episode,transcript_fixture=args.transcript_fixture,visual_only=args.visual_only,evals_root=args.evals_root,eval_labels=args.eval_labels,planner_retry=not args.no_planner_retry,asr_provider=args.asr_provider,voiceover=args.voiceover)
+        report=run_episode(args.footage_dir,args.goal,episodes_root=args.episodes_root,episode_id=args.episode,transcript_fixture=args.transcript_fixture,visual_only=args.visual_only,evals_root=args.evals_root,eval_labels=args.eval_labels,planner_retry=not args.no_planner_retry,asr_provider=args.asr_provider,voiceover=args.voiceover,repair_from=args.repair_from)
         evaluation_path=Path(args.episodes_root)/report['episode_id']/'eval-report.json'
         evaluation=read_json(evaluation_path) if evaluation_path.is_file() else None
         metrics=dict(Q=evaluation['scores']['Q'],J=evaluation['scores']['J'],D=evaluation['scores']['D'],G=evaluation['scores']['G'],quality_per_dollar=evaluation['model_cost']['quality_per_dollar']) if evaluation else dict(Q=None,J=None,D=None,G=None,quality_per_dollar=None)
