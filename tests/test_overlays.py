@@ -107,3 +107,9 @@ def test_control_text_and_too_many_sections_rejected(tmp_path):
     with pytest.raises(Exception,match='Control'):overlays.clean('Kids\x00hidden')
     ctx=EpisodeContext('ep',tmp_path,'Sedona',overlay_sections=['x']*9)
     with pytest.raises(Exception,match='eight'):overlays.requested(ctx)
+
+
+def test_numbered_goal_list_enables_without_extra_flag(tmp_path):
+    ctx=EpisodeContext('ep',tmp_path,'Sedona with Kids\n1. Halloween in Uptown\n2. Hilton Bell Rock')
+    title,sections=overlays.requested(ctx)
+    assert title=='Sedona with Kids' and len(sections)==2 and overlays.active(ctx)

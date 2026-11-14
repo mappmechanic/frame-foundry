@@ -19,6 +19,9 @@ def clean(text):
     return re.sub(r'\s+',' ',text).strip()
 def requested(ctx):
     goal=ctx.goal; sections=list(getattr(ctx,'overlay_sections',[]) or [])
+    listed=list(re.finditer(r'(?m)^\s*(?:[0-9]+[.)]|[-*])\s+(.+)$',goal))
+    if not sections and listed:
+        sections=[m.group(1) for m in listed];goal=goal[:listed[0].start()]
     if not sections and ';' in goal:
         pieces=goal.split(';');goal=pieces[0];sections=[clean(x) for x in pieces[1:] if clean(x)]
     if len(sections)>8:raise StageError('OVERLAY_SECTIONS','planner','At most eight sections are supported')
@@ -82,7 +85,8 @@ def face_boxes(source,source_time,w,h):
     """Same local Haar detector, one crop-matched frame; not full face tracking."""
     try:
         import cv2, numpy as np
-        filt=f'scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}'
+        filt=(f'scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}' if h>w
+              else f'scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2')
         p=subprocess.run(['ffmpeg','-nostdin','-v','error','-ss',str(source_time/1000),'-i',source,
             '-vf',filt,'-frames:v','1','-f','rawvideo','-pix_fmt','rgb24','-threads','1','pipe:1'],capture_output=True,timeout=30)
         if p.returncode or len(p.stdout)!=w*h*3:return None

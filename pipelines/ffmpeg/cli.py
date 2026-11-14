@@ -44,6 +44,8 @@ def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixt
     if not Path(footage_dir).is_dir():raise StageError('INPUT_EMPTY','refinery','Footage directory is unavailable')
     from .goal_parser import parse_goal
     parse_goal(goal,target_seconds=target_seconds,aspect=aspect)
+    from .overlays import requested
+    requested(EpisodeContext('preflight',Path(episodes_root),goal,overlay_mode=overlays,overlay_sections=list(sections or [])))
     episode_id=episode_id or datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S-')+uuid.uuid4().hex[:6]
     root=Path(episodes_root).resolve()
     from .disk_safety import require_free_disk,cleanup_work_media
