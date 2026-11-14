@@ -179,3 +179,82 @@ def test_interval_merge_grid_and_strict_broll_threshold():
     assert merged == [(0,2*audio.RATE),(int(4.5*audio.RATE),5*audio.RATE)]
     rows = audio._regions(merged, 8*audio.RATE, audio.DEFAULT_POLICY)
     assert [r['kind'] for r in rows] == ['dialogue','short_gap','dialogue','broll']
+
+
+def test_sample_exact_smooth_envelope_determinism(tmp_path):
+    # Constant PCM makes every envelope sample directly observable.
+    samples = 4*audio.RATE
+    raw = tmp_path/'in.f32'
+    raw.write_bytes(array.array('f', [.1]) * (samples*2))
+    regions = audio._regions([(0,audio.RATE)], samples, audio.DEFAULT_POLICY)
+    one, two = tmp_path/'one.f32', tmp_path/'two.f32'
+    audio._envelope(raw, one, regions, 1, audio.DEFAULT_POLICY)
+    audio._envelope(raw, two, audio._regions([(0,audio.RATE)], samples, audio.DEFAULT_POLICY), 1, audio.DEFAULT_POLICY)
+    assert one.read_bytes() == two.read_bytes()
+    values = array.array('f'); values.frombytes(one.read_bytes())
+    assert len(values) == samples*2
+    assert values[2*(audio.RATE-1)] == pytest.approx(.1*10**(-10/20))
+    assert values[2*audio.RATE] == pytest.approx(values[2*(audio.RATE-1)])
+    assert values[2*(audio.RATE+7200)] == pytest.approx(.1)
+    assert max(abs(values[i]-values[i-2]) for i in range(2,len(values),2)) < .00002
+
+
+def test_failed_final_gate_preserves_existing_output(media, tmp_path, monkeypatch):
+    output = tmp_path/'previous.mp4'; output.write_bytes(b'previous verified output')
+    original = audio._measure
+    def measure(path, extra=()):
+        if Path(path).name == 'candidate.mp4':
+            return {'integrated_lufs':-18, 'true_peak_dbtp':0}
+        return original(path, extra)
+    monkeypatch.setattr(audio, '_measure', measure)
+    with pytest.raises(audio.AudioPolicyError) as error:
+        audio.apply_audio_policy(media[0], output, music_path=media[1], authorized=True)
+    assert error.value.code == 'AUDIO_QA'
+    assert output.read_bytes() == b'previous verified output'
+    assert not list(tmp_path.glob('.audio-policy-*'))
+
+
+def test_media_binary_overrides_and_missing_executable(media, tmp_path, monkeypatch):
+    monkeypatch.setenv('FRAMEFOUNDRY_FFMPEG', 'local-test-ffmpeg')
+    monkeypatch.setenv('FRAMEFOUNDRY_FFPROBE', 'local-test-ffprobe')
+    assert audio._ffmpeg()[0] == 'local-test-ffmpeg'
+    assert render._ffmpeg()[0] == 'local-test-ffmpeg'
+    observed = []
+    def capture(args):
+        observed.append(args)
+        return subprocess.CompletedProcess(args, 0, '{"streams":[],"format":{}}', '')
+    monkeypatch.setattr(audio, '_run', capture)
+    audio._probe(media[0])
+    assert observed[0][0] == 'local-test-ffprobe'
+    assert 'file,pipe' in observed[0]
+
+
+def test_bad_music_probe_and_same_path(media, tmp_path):
+    invalid = tmp_path/'invalid.wav'; invalid.write_bytes(b'not audio')
+    with pytest.raises(audio.AudioPolicyError) as error:
+        audio.apply_audio_policy(media[0], tmp_path/'out.mp4', music_path=invalid, authorized=True)
+    assert error.value.code == 'AUDIO_PROBE'
+    with pytest.raises(audio.AudioPolicyError) as error:
+        audio.apply_audio_policy(media[0], media[0])
+    assert error.value.code == 'AUDIO_PATH'
+
+
+@pytest.mark.parametrize('duration', ['nan', 'inf', '0', '3601'])
+def test_bounded_video_duration(media, tmp_path, monkeypatch, duration):
+    monkeypatch.setattr(audio, '_probe', lambda _: {'streams':[{'codec_type':'video',
+        'duration':duration, 'avg_frame_rate':'30/1'}], 'format':{'duration':duration}})
+    with pytest.raises(audio.AudioPolicyError) as error:
+        audio.apply_audio_policy(media[0], tmp_path/'out.mp4')
+    assert error.value.code == 'AUDIO_DURATION'
+
+
+def test_last_fractional_sample_remains_protected():
+    assert audio._intervals([(0.100005,0.10001)], 0.10001, 4800) == [(4799,4800)]
+
+
+def test_missing_source_audio_refused(media, tmp_path):
+    source = tmp_path/'silent-video.mp4'
+    run('-i', media[0], '-an', '-c:v', 'copy', source)
+    with pytest.raises(audio.AudioPolicyError) as error:
+        audio.apply_audio_policy(source, tmp_path/'out.mp4', music_path=media[1], authorized=True)
+    assert error.value.code == 'AUDIO_SOURCE'

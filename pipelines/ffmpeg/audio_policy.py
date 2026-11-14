@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import array
 import hashlib
+from fractions import Fraction
 import json
 import math
 import os
@@ -41,7 +42,7 @@ def _run(args):
     except (OSError, subprocess.TimeoutExpired):
         _fail('AUDIO_PROCESS', 'Local media process could not complete')
     if result.returncode:
-        _fail('AUDIO_PROCESS', 'Local media process failed (media paths redacted)')
+        _fail('AUDIO_PROCESS', 'Local media process failed; verify decodable files and available codecs (paths redacted)')
     return result
 
 
@@ -68,8 +69,8 @@ def _probe(path):
         return json.loads(_run([media_binary('ffprobe'), '-v', 'error',
             '-protocol_whitelist', 'file,pipe', '-show_streams', '-show_format',
             '-of', 'json', str(path)]).stdout)
-    except (ValueError, KeyError, TypeError):
-        _fail('AUDIO_PROBE', 'Invalid local media probe')
+    except (AudioPolicyError, ValueError, KeyError, TypeError):
+        _fail('AUDIO_PROBE', 'Cannot probe local media; supply a readable, decodable media file')
 
 
 def _local(value, *, output=False):
@@ -114,7 +115,8 @@ def _intervals(values, duration, samples):
             if not 0 <= start < end <= duration:
                 raise ValueError()
             # Outward rounding protects even sub-sample speech.
-            rows.append((max(0, math.floor(start * RATE)), min(samples, math.ceil(end * RATE))))
+            rows.append((max(0, min(samples-1, math.floor(start * RATE))),
+                         max(1, min(samples, math.ceil(end * RATE)))))
     except (TypeError, ValueError, OverflowError):
         _fail('AUDIO_INTERVALS', 'Expected at most 512 finite output-relative (start, end) seconds within video')
     merged = []
@@ -161,7 +163,7 @@ def _envelope(raw, shaped, regions, base_gain, policy):
             count = region['end_sample'] - region['start_sample']
             low = 10 ** ((policy['dialogue_lufs'] - policy['bed_lufs']) / 20)
             broll = region['kind'] == 'broll'
-            in_energy = out_energy = gain_energy = 0.0
+            in_energy = out_energy = 0.0
             minimum, maximum = math.inf, 0.0
             offset = 0
             while offset < count:
@@ -177,7 +179,6 @@ def _envelope(raw, shaped, regions, base_gain, policy):
                     gain = base_gain * (low + (1-low) * fraction)
                     relative = gain / base_gain
                     minimum = min(minimum, relative); maximum = max(maximum, relative)
-                    gain_energy += relative * relative
                     for channel in (0, 1):
                         j = 2*i + channel
                         in_energy += values[j] ** 2
@@ -191,7 +192,7 @@ def _envelope(raw, shaped, regions, base_gain, policy):
                 input_rms=math.sqrt(in_energy/(count*2)), output_rms=math.sqrt(out_energy/(count*2)))
 
 
-def apply_audio_policy(video, output, *, music_path=None, authorized=False,
+def _apply_audio_policy(video, output, *, music_path=None, authorized=False,
                        dialogue_intervals=(), policy=None) -> dict:
     """Copy normalized video unchanged, or locally mix explicitly authorized music.
 
@@ -210,7 +211,10 @@ def apply_audio_policy(video, output, *, music_path=None, authorized=False,
         if not math.isfinite(duration) or not 0 < duration <= MAX_SECONDS:
             raise ValueError()
         samples = round(duration * RATE)
-    except (ValueError, KeyError, StopIteration, TypeError):
+        frame_rate = float(Fraction(visual['avg_frame_rate']))
+        if samples < 1 or not math.isfinite(frame_rate) or frame_rate <= 0:
+            raise ValueError()
+    except (ValueError, KeyError, StopIteration, TypeError, ZeroDivisionError):
         _fail('AUDIO_DURATION', 'Expected video with a finite duration of at most 3600 seconds')
     intervals = _intervals(dialogue_intervals, duration, samples)
     receipt = dict(version=1, status='absent', music_sha256=None, authorized=False,
@@ -232,8 +236,14 @@ def apply_audio_policy(video, output, *, music_path=None, authorized=False,
         _fail('AUDIO_PATH', 'Output must not overwrite the supplied music')
     if not any(s['codec_type'] == 'audio' for s in streams):
         _fail('AUDIO_SOURCE', 'Music mixing requires existing rendered source audio including any intro')
-    if not any(s.get('codec_type') == 'audio' for s in _probe(music).get('streams', [])):
-        _fail('AUDIO_MUSIC', 'Supplied music has no audio stream')
+    music_info = _probe(music)
+    try:
+        music_audio = next(s for s in music_info['streams'] if s.get('codec_type') == 'audio')
+        music_duration = float(music_audio.get('duration', music_info['format']['duration']))
+        if not math.isfinite(music_duration) or music_duration <= 0:
+            raise ValueError()
+    except (KeyError, ValueError, TypeError, StopIteration):
+        _fail('AUDIO_MUSIC', 'Supplied music needs an audio stream with finite positive duration')
     _filters()
     digest = hashlib.sha256()
     with music.open('rb') as file:
@@ -270,17 +280,41 @@ def apply_audio_policy(video, output, *, music_path=None, authorized=False,
             _fail('AUDIO_QA', 'Encoded mix failed authoritative -14 +/-1 LUFS / <=-1 dBTP gates')
         delivered = _probe(candidate)
         out_video = next(s for s in delivered['streams'] if s['codec_type'] == 'video')
-        frame_duration = 1 / float(__import__('fractions').Fraction(visual['avg_frame_rate']))
-        out_duration = float(out_video['duration'])
-        if abs(out_duration-duration) > frame_duration or out_video.get('nb_frames') != visual.get('nb_frames'):
+        frame_duration = 1 / frame_rate
+        try:
+            out_duration = float(out_video['duration'])
+            container_duration = float(delivered['format']['duration'])
+            if not math.isfinite(out_duration) or not math.isfinite(container_duration):
+                raise ValueError()
+        except (KeyError, TypeError, ValueError):
+            _fail('AUDIO_DURATION', 'Cannot verify delivered video duration')
+        if (abs(out_duration-duration) > frame_duration or
+                abs(container_duration-duration) > frame_duration or
+                out_video.get('nb_frames') != visual.get('nb_frames')):
             _fail('AUDIO_DURATION', 'Mix changed video frame count or duration beyond one frame')
         os.replace(candidate, output)
     receipt.update(status='mixed', authorized=True, music_sha256=digest.hexdigest(),
         regions=regions, music_input_measurement=stats,
         bed_normalization_gain_db=20*math.log10(base_gain), final_measurement=final,
         video_stream_copy=True, output_video_duration_seconds=out_duration,
+        output_container_duration_seconds=container_duration,
         limitations=['Authorization is operator attestation, not license verification.',
           'Bed targets are absolute pre-mix EBU R128-reference levels; final overall normalization changes all audio globally.',
           'Regional music content can vary in loudness; measured PCM gain/RMS proves ducking, not uniform regional LUFS.',
           'Music loops locally; no download, generation, paid calls, or automatic speech detection.'])
     return receipt
+
+
+def apply_audio_policy(video, output, *, music_path=None, authorized=False,
+                       dialogue_intervals=(), policy=None) -> dict:
+    """Apply optional local authorized music; return a path-free JSON-safe receipt.
+
+    Output-relative speech/VO intervals are finite (start, end) seconds.
+    Errors are AudioPolicyError/StageError with stage='assembler'. Output is
+    replaced only after encoded loudness/peak and video-duration verification.
+    """
+    try:
+        return _apply_audio_policy(video, output, music_path=music_path,
+            authorized=authorized, dialogue_intervals=dialogue_intervals, policy=policy)
+    except OSError:
+        _fail('AUDIO_PATH', 'Cannot access local media or temporary/output storage; check permissions and disk space')
