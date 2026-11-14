@@ -456,5 +456,42 @@ completion or merge, and not the new UI work orders. Shipped means hash-verified
 local output, not social publishing. macOS `/tmp` directory aliases are resolved
 for `--html`; final output-file symlinks and input/artifact overwrites remain
 blocked. Closed subject aliases such as `night parade` and `people` are normalized
-only from supplied Planner evidence; the eight-window shortlist prefers usable
-in-window frames. Narration still never infers subjects from Goal or filenames.
+only from supplied Planner evidence; the eight-window shortlist retains the original quality/source-diverse
+ranking; frame availability does not promote weaker selections. Narration still never infers subjects from Goal or filenames.
+
+
+### Mac mini disk safety and restored demo selection
+
+Generation checks the output volume before paid processing and again before each
+assembly attempt. Less than **1 GB (1,000,000,000 bytes)** free fails with
+`DISK_SPACE_LOW` and the available/required amount. Exactly 1 GB is accepted;
+this is a minimum admission floor, not a guarantee every input/render fits.
+With only 1.3 GB available, retain extra headroom if possible. This does not
+clean earlier episodes or delete source footage automatically.
+
+Successful delivered episodes now remove intermediate media under `work/`
+(including `cut-*.mov`, `joined.mov`, `voiced.mov`, and `candidate.mp4`) only after
+QA, final artifacts, and evaluation persistence finish. JSON/OTIO/TXT sidecars,
+original footage, proxies/frames, intro audio, contact sheet and `finished.mp4`
+remain. Failed/interrupted work stays diagnostic. Cleanup failures warn without
+revoking an otherwise valid delivery. `work-cleanup.json` records deletion counts.
+Use `--keep-work` on CLI generation or forward it through
+`make demo-arizona ARGS='--episode az-debug --voiceover --keep-work'` to retain
+successful-run intermediates. UI jobs use the default cleanup behavior.
+
+The quality/source-diverse top-eight ranking from `5da9749` is restored.
+The frame-first shortlist introduced in `f18bd0d` could change selected footage
+and the ending; the closing-v2 guards themselves were unchanged. When effective
+Goal constraints match the old defaults, existing validated baseline Planner
+cache entries can be reused, including matching UI controls. Real duration/aspect
+overrides have distinct cache identities. No old judge score is transferred to
+changed renders; no new paid repair is introduced. `--repair-from` remains opt-in.
+
+New `subjects-v2` narration prefers retained parade/performer/market and other
+distinctive subjects over generic family activities; no subject is inferred
+from filenames or Goal. The old `subjects-v1` wording remains verifiable for
+historical outputs. When evidence supports only generic subjects, narration
+stays generic rather than inventing an event. An exact comparison with Mac
+az-0700/az-0810 requires their saved timelines/narratives/evaluations; these
+artifacts are not present in this workspace, and a recovered live J/Q score
+has not been claimed. Campaign work remains deferred until Mac UI verification.

@@ -236,12 +236,8 @@ def _complete_visual_duration(analysis, intent, response, candidates):
 
 def _compact_evidence(ctx, analysis, directory, candidates=None):
     if candidates is None:candidates=_local_candidates(ctx, analysis)
-    # Prefer inspectable windows: empty tiles cannot ground descriptive narration.
-    framed=[c for c in candidates if c.get('frame_in_window') and c.get('frame_path')
-            and type(c.get('frame_time_ms')) is int and c['start_ms']<=c['frame_time_ms']<c['end_ms']]
-    top=rank_candidates(framed,ctx.goal,top_n=8)
-    selected={c['candidate_id'] for c in top}
-    top+=rank_candidates([c for c in candidates if c['candidate_id'] not in selected],ctx.goal,top_n=8-len(top))
+    # Baseline quality/source-diverse ranking; framing is evidence, not rank.
+    top=rank_candidates(candidates,ctx.goal,top_n=8)
     rows=[];tiles=[]
     for c in top:
         row={k:c[k] for k in ('candidate_id','source_id','start_ms','end_ms','transcript_snippet','quality','quality_method') if k in c}
@@ -427,7 +423,10 @@ def plan_teaser(ctx: EpisodeContext, analysis: dict, *, provider=_DEFAULT_PROVID
                 if retry_fix is not None:payload['fix_instruction']=str(retry_fix)[:160]
                 # Cache only validated source-backed decisions, never media or credentials.
                 from .evaluator import footage_fingerprint
-                identity=dict(footage=footage_fingerprint(analysis['sources']),goal=ctx.goal,provider=getattr(provider,'provider',None),model=getattr(provider,'model',None),protocol='compact-planner-9-explicit-settings-grounded-closing-v2',target_duration_ms=intent.target_duration_ms,aspect_ratio=intent.aspect_ratio,transcription_status=analysis.get('transcription_status'),candidates=rows,fix=retry_fix)
+                identity=dict(footage=footage_fingerprint(analysis['sources']),goal=ctx.goal,provider=getattr(provider,'provider',None),model=getattr(provider,'model',None),protocol='compact-planner-7-grounded-subjects-crop-closing-v2',transcription_status=analysis.get('transcription_status'),candidates=rows,fix=retry_fix)
+                baseline=parse_goal(ctx.goal)
+                if (intent.target_duration_ms,intent.aspect_ratio)!=(baseline.target_duration_ms,baseline.aspect_ratio):
+                    identity.update(protocol='compact-planner-10-baseline-rank-explicit-settings-closing-v2',target_duration_ms=intent.target_duration_ms,aspect_ratio=intent.aspect_ratio)
                 key=hashlib.sha256(json.dumps(identity,sort_keys=True).encode()).hexdigest()
                 cache=Path(os.environ.get('FRAMEFOUNDRY_CACHE_DIR',str(Path(__file__).resolve().parents[2]/'.inference-cache')))/'planner'/f'{key}.json'
                 data=None

@@ -73,7 +73,7 @@ def subjects_in(spec):
     return subjects,labels
 
 
-def intro(spec):
+def intro_v1(spec):
     subjects,labels=subjects_in(spec)
     nouns=[SUBJECTS[s] for s in SUBJECTS if s in subjects]
     if not nouns:
@@ -108,3 +108,31 @@ def validate_evidence(spec,analysis=None,root=None):
             root=Path(root).resolve();path=(root/e['frame_path']).resolve()
             if not path.is_relative_to(root) or hashlib.sha256(path.read_bytes()).hexdigest()!=e['frame_sha256']:
                 raise ValueError('Semantic evidence frame hash/path invalid')
+
+
+DISTINCTIVE_ORDER=('night_parade','parade','street_performers','market','fireworks','wildlife',
+                  'amusement_ride','boat_ride','train_ride','food_stalls','hiking','beach','sunset')
+
+
+def intro(spec):
+    """Name retained distinctive evidence before generic family/scenic labels."""
+    subjects,_=subjects_in(spec)
+    distinctive=[SUBJECTS[s] for s in DISTINCTIVE_ORDER if s in subjects]
+    if not distinctive:
+        # Avoid redundant "family walks and family activities" when both exist.
+        if 'family_walk' in subjects and 'family_activity' in subjects:
+            from copy import deepcopy
+            spec=deepcopy(spec)
+            for segment in spec['segments']:
+                evidence=segment.get('semantic_evidence')
+                if evidence:evidence['subjects']=[s for s in evidence['subjects'] if s!='family_activity']
+        return intro_v1(spec)
+    chosen=[]
+    for noun in distinctive:
+        trial=chosen+[noun]
+        joined=', '.join(trial[:-1])+' and '+trial[-1] if len(trial)>1 else trial[0]
+        text=joined.capitalize()+'.\nThe moments that stood out.'
+        if len(text)<90:chosen=trial
+        if len(chosen)==3:break
+    joined=', '.join(chosen[:-1])+' and '+chosen[-1] if len(chosen)>1 else chosen[0]
+    return joined.capitalize()+'.\nThe moments that stood out.'

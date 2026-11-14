@@ -105,7 +105,7 @@ def test_complete_mocked_pipeline_speaks_retained_subjects(tmp_path,monkeypatch)
     spec=json.loads((tmp_path/'episodes'/'grounded'/'narrative-spec.json').read_text())
     assert spec['voiceover']['text']==calls[0]['text']==voiceover.intro_text(spec)
     assert any(noun in calls[0]['text'].lower() for noun in ('night parade','market','street performers'))
-    assert spec['voiceover']['grounding_version']=='subjects-v1' and len(calls[0]['text'])<90
+    assert spec['voiceover']['grounding_version']=='subjects-v2' and len(calls[0]['text'])<90
     assert any(s.get('semantic_evidence') for s in spec['segments'])
     evaluation=json.loads((tmp_path/'episodes'/'grounded'/'eval-report.json').read_text())
     assert next(c for c in evaluation['gates']['checks'] if c['name']=='voiceover_integrity')['status']=='pass'
@@ -124,20 +124,43 @@ def test_closed_subject_aliases_do_not_trigger_whole_plan_fallback(tmp_path):
     validate_narrative(spec,a);semantics.validate_evidence(spec,a,tmp_path)
 
 
-def test_shortlist_prefers_available_in_window_subject_evidence(tmp_path):
+def test_shortlist_restores_baseline_rank_even_with_sparse_frame_evidence(tmp_path):
+    from pipelines.ffmpeg.candidates import rank_candidates
     a=framed(tmp_path)
-    # High-ranked unframed windows must not evict the only grounded evidence.
     for c in a['candidates'][3:]:
         c.update(frame_path=None,frame_in_window=False,frame_time_ms=None)
         c['quality']['visual_score']=100
-    provider=SubjectProvider(None)
-    spec=planner.plan_teaser(context(tmp_path,a),a,provider=provider)
-    assert spec['planner_mode']=='llm'
-    assert semantics.subjects_in(spec)[0]
-    assert voiceover.intro_text(spec)!= "A few selected moments.\nLet's take a look."
+    ctx=context(tmp_path,a)
+    rows,images=planner._compact_evidence(ctx,a,tmp_path,a['candidates'])
+    assert [r['candidate_id'] for r in rows]==[c['candidate_id'] for c in rank_candidates(a['candidates'],ctx.goal,top_n=8)]
+    assert len(rows)==8 and len(images)<=1
 
 
 def test_relative_pronoun_is_not_requested_trip_content():
     from pipelines.ffmpeg.goal_parser import parse_goal
     intent=parse_goal('Create a teaser from this raw family-trip footage that highlights the important moments')
     assert not intent.requested_terms
+
+
+def test_distinctive_retained_subjects_exclude_generic_family_filler():
+    s=dict(source_id='a',raw_start_ms=0,raw_end_ms=1000,semantic_evidence=dict(method='planner_in_window_tile',source_id='a',frame_time_ms=500,
+          subjects=['family_walk','family_activity','night_parade','market','street_performers'],labels=['people']))
+    spec=dict(segments=[s]);text=voiceover.intro_text(spec)
+    assert 'Night parade' in text and 'market' in text and 'street performers' in text
+    assert 'family activit' not in text.lower() and len(text)<90
+    assert semantics.intro_v1(spec)!=text
+    # Losing that evidence must remove the named subject, not transfer it.
+    s['raw_end_ms']=400
+    assert 'parade' not in voiceover.intro_text(spec)
+
+
+def test_validated_baseline_cache_is_reused_for_matching_ui_defaults(tmp_path):
+    a=framed(tmp_path);provider=SubjectProvider(None);ctx=context(tmp_path,a)
+    first=planner.plan_teaser(ctx,a,provider=provider)
+    ctx.aspect_override='9:16';ctx.target_seconds=45
+    second=planner.plan_teaser(ctx,a,provider=provider)
+    assert len(provider.calls)==1
+    assert first['segments']==second['segments']
+    ctx.target_seconds=30
+    third=planner.plan_teaser(ctx,a,provider=provider)
+    assert len(provider.calls)==2 and third['target_duration_ms']==30000

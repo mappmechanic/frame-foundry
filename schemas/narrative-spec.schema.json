@@ -397,7 +397,7 @@
           "const": -10
         },
         "grounding_version": {
-          "const": "subjects-v1"
+          "enum": ["subjects-v1", "subjects-v2"]
         }
       }
     }

@@ -170,3 +170,16 @@ def test_original_generic_intro_still_evaluates_as_legacy(tmp_path,audio,monkeyp
     timeline,_=build_timeline(spec,analysis);otio.adapters.write_to_file(timeline,str(tmp_path/'timeline.otio'))
     checks={};eval_gates._voiceover_check(tmp_path,spec,dict(duration_ms=2000),checks)
     assert checks['voiceover_integrity']['status']=='fail'
+
+
+def test_historical_subjects_v1_still_valid_after_distinctive_writer(tmp_path,audio,monkeypatch):
+    from pipelines.ffmpeg import eval_gates,semantics
+    from pipelines.ffmpeg.assembler import build_timeline
+    import opentimelineio as otio
+    spec,analysis,intro,_=prepare(tmp_path,audio,monkeypatch)
+    intro['grounding_version']='subjects-v1';intro['text']=semantics.intro_v1(spec)
+    spec['voiceover']=intro
+    timeline,_=build_timeline(spec,analysis)
+    otio.adapters.write_to_file(timeline,str(tmp_path/'timeline.otio'))
+    checks={};eval_gates._voiceover_check(tmp_path,spec,dict(duration_ms=2000),checks)
+    assert checks['voiceover_integrity']['status']=='pass'
