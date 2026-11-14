@@ -132,7 +132,7 @@ def _audio_window(metrics, words, start, end, offset=0):
 def _base_score(candidate):
     quality = candidate.get('quality', {})
     audio = candidate.get('audio', {})
-    return round(_bounded(quality.get('visual_score')) * .7 +
+    return round(20*min(2,(quality.get('face_count') or 0)+(quality.get('person_count') or 0)) + 30*(quality.get('motion') or 0) + _bounded(quality.get('visual_score')) * .7 +
                  _bounded(audio.get('rms'), 1) * 10 +
                  _bounded(audio.get('speech_fraction'), 1) * 10, 6)
 
@@ -263,7 +263,8 @@ def extract_candidates(analysis: dict, episode_dir: Path, *, window_ms: int = MA
             candidates.append(candidate)
             if digest:
                 duplicates[key] = candidate
-    return candidates
+    from .teaser_edit import enabled, short_candidates
+    return short_candidates(analysis,candidates) if enabled(analysis) else candidates
 
 
 def rank_candidates(candidates: list[dict], goal: str, *, top_n: int = 8) -> list[dict]:

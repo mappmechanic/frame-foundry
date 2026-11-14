@@ -268,3 +268,31 @@ duplicate shot, freeze) are caught by offline self-tests. Tests create temporary
 FFmpeg media and mocked providers; generated media never enters Git. Real 480p
 Arizona demo proves media/audio execution only, not original iPhone 4K HDR/VFR
 color fidelity, genuine ASR, live model judgment or human publishability.
+
+
+### Arizona short-shot policy and CPU cues
+
+Run `uv pip install --python .venv/bin/python -r requirements-dev.txt -e .` after
+pulling to install CPU-only OpenCV. Bundled Haar faces/HOG people process at most
+three existing keyframes per source, <=320px, one thread and OpenCL disabled;
+no model downloads. Counts are detector cues, not verified subjects. Sparse
+motion also includes camera movement/lighting, not action recognition. A local
+26-clip/78-frame detector-only benchmark took 3.18s; the exact Mac runtime remains
+to be measured (full pipeline includes ASR/render time).
+
+Normal refinery runs create short, fully protected speech phrases (<=3s) and
+b-roll windows from every source. Connected speech longer than 3s is not forcibly
+split: choose other safe footage, never weaken 80ms/120ms word protection.
+The Planner still sees eight rows and one image, with optional evidence-backed
+people/action/scenic-wide/interior/screen labels in the same call. Full source,
+usable-window and selected duration are reported separately. Local duration fill
+can add uninspected footage and enforce a detector/high-motion hook; absent hook
+evidence is explicit partial coverage, not an invented detection.
+
+Arizona caps the shared ASR/Planner/judge allowance at **$0.10**, retaining stricter
+configured limits. One concrete judged fix triggers the single Planner repair
+when J<=0.5 or opening<=2, even if verdict is pass. Original judged scores/hash are
+retained in attempt evidence; changed renders do not inherit stale final J/Q,
+and do not receive another judge call. Use `--no-planner-retry` for an explicitly
+single-plan comparison if you need a scored unchanged cut. Zero/unknown spend
+and missing semantic scores remain unavailable, never fabricated efficiency.

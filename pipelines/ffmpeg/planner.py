@@ -16,6 +16,7 @@ from jsonschema import Draft202012Validator, ValidationError
 from .contracts import EpisodeContext, StageError, atomic_write_json, validate_narrative
 from .goal_parser import parse_goal
 from .candidates import extract_candidates,rank_candidates
+from . import teaser_edit
 from .llm_provider import LLMProvider, ProviderError, ProviderBudgetError
 
 _DEFAULT_PROVIDER = object()
@@ -33,7 +34,7 @@ will coalesce into a long shot. When the Goal is a family trip, prioritize peopl
 shared experiences, scenic destinations and activities over static rooms or TV
 screens unless those are explicitly central to the Goal. Open with a meaningful
 hook, develop the trip, and close with a payoff. Do not impose this family-trip
-preference on unrelated Goals. Samples are not exhaustive inspection. Do not add fields.'''
+preference on unrelated Goals. Samples are not exhaustive inspection. Return optional semantic_labels per segment only when supported by its in-window tile: people, action, scenic_wide, interior, screen. First shot must feature people/action or measured high motion. Prefer scenic wides and activity; penalize static interiors/screens except meaningful people/action. Do not claim eight supplied candidates represent all footage. Do not add unlisted fields.'''
 _RESPONSE_SCHEMA = {
     'type': 'object', 'additionalProperties': False,
     'required': ['interpretation', 'assumptions', 'segments', 'coverage'],
@@ -46,7 +47,7 @@ _RESPONSE_SCHEMA = {
             'properties': {'source_id': {'type': 'string'},
                            'raw_start_ms': {'type': 'integer', 'minimum': 0},
                            'raw_end_ms': {'type': 'integer', 'minimum': 0},
-                           'reason': {'type': 'string', 'minLength': 1}}}},
+                           'reason': {'type': 'string', 'minLength': 1}, 'semantic_labels': {'type':'array','maxItems':5,'uniqueItems':True,'items':{'enum':['people','action','scenic_wide','interior','screen']}}}}},
         'coverage': {'type': 'object', 'additionalProperties': False,
                      'required': ['status', 'limitations'],
                      'properties': {'status': {'enum': ['full', 'partial']},
@@ -374,7 +375,7 @@ def _reconstruct(ctx, analysis, intent, response, mode):
                 sources=deepcopy(analysis['sources']), segments=[], coverage=deepcopy(response['coverage']),
                 exclusions=deepcopy(analysis.get('exclusions', [])))
     for index, segment in enumerate(response['segments'], 1):
-        spec['segments'].append(dict(segment, segment_id=f'seg-{index:03d}', render_start_ms=None, render_end_ms=None))
+        spec['segments'].append(dict({k:v for k,v in segment.items() if k!='semantic_labels'}, segment_id=f'seg-{index:03d}', render_start_ms=None, render_end_ms=None))
     limitations = spec['coverage']['limitations']
     actual = sum(s['raw_end_ms'] - s['raw_start_ms'] for s in spec['segments'])
     if actual > intent.target_duration_ms:
@@ -403,17 +404,18 @@ def plan_teaser(ctx: EpisodeContext, analysis: dict, *, provider=_DEFAULT_PROVID
         except ProviderError:
             provider, cause = None, 'Provider configuration failed'
     spec = None
-    candidates = _local_candidates(ctx, analysis) if _visual_only(analysis) else None
+    candidates = _local_candidates(ctx, analysis) if _visual_only(analysis) or teaser_edit.enabled(analysis) else None
     if provider is not None:
         try:
             with tempfile.TemporaryDirectory(prefix='planner-') as directory:
                 rows, images = _compact_evidence(ctx,analysis,directory,candidates)
                 payload = dict(goal=ctx.goal, constraints=dict(target_duration_ms=intent.target_duration_ms, aspect_ratio=intent.aspect_ratio),
                     candidates=rows,response_schema=_RESPONSE_SCHEMA)
+                if teaser_edit.enabled(analysis):payload['duration_evidence']=dict(source_duration_ms=sum(s['duration_ms'] for s in analysis['sources']),usable_short_windows_ms=sum(c['end_ms']-c['start_ms'] for c in candidates),local_candidate_count=len(candidates),shortlist_duration_ms=sum(c['end_ms']-c['start_ms'] for c in rows))
                 if retry_fix is not None:payload['fix_instruction']=str(retry_fix)[:160]
                 # Cache only validated source-backed decisions, never media or credentials.
                 from .evaluator import footage_fingerprint
-                identity=dict(footage=footage_fingerprint(analysis['sources']),goal=ctx.goal,provider=getattr(provider,'provider',None),model=getattr(provider,'model',None),protocol='compact-planner-3-pacing-crop',transcription_status=analysis.get('transcription_status'),candidates=rows,fix=retry_fix)
+                identity=dict(footage=footage_fingerprint(analysis['sources']),goal=ctx.goal,provider=getattr(provider,'provider',None),model=getattr(provider,'model',None),protocol='compact-planner-4-protected-hook',transcription_status=analysis.get('transcription_status'),candidates=rows,fix=retry_fix)
                 key=hashlib.sha256(json.dumps(identity,sort_keys=True).encode()).hexdigest()
                 cache=Path(os.environ.get('FRAMEFOUNDRY_CACHE_DIR',str(Path(__file__).resolve().parents[2]/'.inference-cache')))/'planner'/f'{key}.json'
                 data=None
@@ -435,7 +437,7 @@ def plan_teaser(ctx: EpisodeContext, analysis: dict, *, provider=_DEFAULT_PROVID
                 # Validate the original decision before completing it, so invalid
                 # overlap/bounds cannot be hidden by the duration helper.
                 _reconstruct(ctx, analysis, intent, data, 'llm')
-                completed = _complete_visual_duration(analysis, intent, data, candidates or [])
+                completed = teaser_edit.complete(analysis,intent,data,candidates or []) if teaser_edit.enabled(analysis) else _complete_visual_duration(analysis, intent, data, candidates or [])
                 spec = _reconstruct(ctx, analysis, intent, completed, 'llm')
                 if not hit and identity['footage']:
                     atomic_write_json(cache,dict(key=key,data=data,historical_usage=getattr(response,'usage',{})))
@@ -455,7 +457,7 @@ def plan_teaser(ctx: EpisodeContext, analysis: dict, *, provider=_DEFAULT_PROVID
             fallback_analysis = dict(analysis, scenes=[dict(source_id=c['source_id'],
                 start_ms=c['start_ms'], end_ms=c['end_ms']) for c in candidates])
         data = _pace_local_visual_response(analysis, _fallback(fallback_analysis, intent, cause))
-        data = _complete_visual_duration(analysis, intent, data, candidates or [])
+        data = teaser_edit.complete(analysis,intent,data,candidates or []) if teaser_edit.enabled(analysis) else _complete_visual_duration(analysis, intent, data, candidates or [])
         spec = _reconstruct(ctx, analysis, intent, data, 'deterministic')
     validate_narrative(spec, analysis)
     atomic_write_json(Path(ctx.episode_dir) / 'narrative-spec.json', spec)
