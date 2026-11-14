@@ -33,7 +33,7 @@ MAX_BYTES = 8_000_000
 ID = re.compile(r'[a-z0-9][a-z0-9-]{0,63}\Z')
 SHOT = re.compile(r'shot-[0-9]{2,6}\Z')
 MARKER = '.framefoundry-export.json'
-PUBLIC_CHECKS=set(CHECK_NAMES)|{'voiceover_integrity','narrative_schema','output_encoding','output_dimensions','output_fps','timeline_and_padding','render_duration','goal_duration','goal_coverage','overlay_safe_area','overlay_duration','overlay_text_limits','overlay_cut_clearance','overlay_render_binding'}
+PUBLIC_CHECKS=set(CHECK_NAMES)|{'voiceover_integrity','narrative_schema','output_encoding','output_dimensions','output_fps','timeline_and_padding','render_duration','goal_duration','goal_coverage','overlay_safe_area','overlay_duration','overlay_text_limits','overlay_cut_clearance','overlay_render_binding','overlay_legibility'}
 
 class ExportError(RuntimeError): pass
 
@@ -183,6 +183,10 @@ def export_site(*, episodes_root=REPO/'episodes',evals_root=REPO/'evals',site_ro
                     canonical=read_json(regular(directory,'eval-report.json'));validate_eval_report(canonical)
                     if canonical['episode_id']!=eid or not passed_evaluation(canonical):raise ValueError()
                     qa=read_json(regular(directory,'qa-report.json'));validate_report(qa)
+                    qa_names={c['name'] for c in qa['checks']}
+                    if 'overlay_render_binding' in qa_names:
+                        for evidence in (qa['checks'],canonical['gates']['checks']):
+                            if not any(c['name']=='overlay_legibility' and c['status']=='pass' for c in evidence):raise ValueError()
                     if qa['episode_id']!=eid or not qa['passed']: raise ValueError()
                     if not (-15<=qa['integrated_lufs']<=-13 and qa['true_peak_dbtp']<=-1): raise ValueError()
                     if not passed_evaluation(report):raise ValueError()

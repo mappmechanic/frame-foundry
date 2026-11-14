@@ -192,3 +192,23 @@ def test_render_failure_emits_valid_assembler_diagnostic(input_set,tmp_path,monk
     assert saved['error']['message']=='Overlay compositor failed: diagnostic retained'
     assert saved['attempts']==[dict(index=1,stage='assembler',passed=False,reasons=['RENDER_PROCESS'],changes=[])]
     assert not (tmp_path/'render-failure'/'finished.mp4').exists()
+
+
+def test_saved_plan_reoverlay_uses_zero_planner_calls(output_set,tmp_path,monkeypatch):
+    from scripts.reoverlay import rerender
+    from pipelines.ffmpeg import overlays,planner
+    source,previous=output_set
+    seed=tmp_path/'seed'/'offline';shutil.copytree(source,seed)
+    spec=read_json(seed/'narrative-spec.json')
+    ctx=EpisodeContext(spec['episode_id'],seed,spec['goal'],overlay_mode=True)
+    overlays.attach(ctx,spec);atomic_write_json(seed/'narrative-spec.json',spec)
+    def forbidden(*args,**kwargs):raise AssertionError('A saved-plan re-render must not call Planner')
+    monkeypatch.setattr(planner,'plan_teaser',forbidden)
+    before=[Path(s['path']).read_bytes() for s in spec['sources']]
+    root,qa=rerender(seed,tmp_path/'replays','legible-replay',evals_root=tmp_path/'evals')
+    validate_report(qa)
+    assert qa['ai_usage']==[] and (root/'contact-sheet.jpg').is_file()
+    assert read_json(root/'narrative-spec.json')['overlays']['cards'][0]['cap_height']>=116
+    assert any(c['name']=='overlay_legibility' and c['status']=='pass' for c in qa['checks'])
+    assert read_json(root/'eval-report.json')['scores']['J'] is None
+    assert [Path(s['path']).read_bytes() for s in spec['sources']]==before
