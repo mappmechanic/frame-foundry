@@ -6,6 +6,7 @@ independent of the provider's ledger. Input is a reasoning-free projection
 actual final render labelled with shot ids. Only validated successes are cached.
 """
 from __future__ import annotations
+from .media_tools import media_binary
 
 from datetime import datetime, timezone
 from pathlib import Path
@@ -105,7 +106,7 @@ def build_judge_sheet(video_path, shots, output, *, render_w, render_h):
         for i, shot in enumerate(shots):
             mid = shot.get('overlay_sample_seconds',(shot['timeline_start_ms'] + shot['timeline_end_ms']) / 2000)
             frame = Path(tmp) / f'{i}.png'
-            subprocess.run(['ffmpeg', '-y', '-v', 'error', '-nostdin', '-ss', f'{mid:.3f}', '-i', str(video_path),
+            subprocess.run([media_binary('ffmpeg'), '-y', '-v', 'error', '-nostdin', '-ss', f'{mid:.3f}', '-i', str(video_path),
                             '-frames:v', '1', '-vf', f'scale={tw}:{th}', '-threads', '1', str(frame)],
                            check=True, capture_output=True, timeout=120)
             with Image.open(frame) as image:

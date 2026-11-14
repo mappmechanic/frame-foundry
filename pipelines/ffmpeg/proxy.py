@@ -1,4 +1,5 @@
 """Low-resolution, orientation-corrected analysis proxies; originals stay untouched."""
+from .media_tools import media_binary
 from pathlib import Path
 import json, subprocess
 from .contracts import StageError
@@ -9,7 +10,7 @@ def run(cmd, timeout=180):
         raise StageError('MEDIA_PROCESS_FAILED','refinery','Media process failed') from e
 
 def probe(path):
-    data=json.loads(run(['ffprobe','-v','error','-show_streams','-show_format','-of','json',str(path)]).stdout)
+    data=json.loads(run([media_binary('ffprobe'),'-v','error','-show_streams','-show_format','-of','json',str(path)]).stdout)
     videos=[s for s in data['streams'] if s['codec_type']=='video']
     if not videos: raise StageError('NO_VIDEO','refinery','Source contains no video')
     v=videos[0]; fmt=data['format']
@@ -22,7 +23,7 @@ def probe(path):
 def create_proxy(source_path, output_path, *, max_side=640, fps=15):
     source_path=Path(source_path); output_path=Path(output_path); output_path.parent.mkdir(parents=True,exist_ok=True)
     original=probe(source_path)
-    run(['ffmpeg','-y','-v','error','-threads','2','-i',str(source_path),'-map','0:v:0','-map','0:a:0?',
+    run([media_binary('ffmpeg'),'-y','-v','error','-threads','2','-i',str(source_path),'-map','0:v:0','-map','0:a:0?',
          '-vf',f'scale={max_side}:{max_side}:force_original_aspect_ratio=decrease:force_divisible_by=2,setsar=1,fps={fps}',
          '-r',str(fps),'-c:v','libx264','-preset','ultrafast','-crf','28','-pix_fmt','yuv420p',
          '-threads','2','-filter_threads','1','-c:a','aac','-ar','48000','-metadata:s:v:0','rotate=0',str(output_path)])
@@ -38,7 +39,7 @@ def sample_keyframes(proxy_path,out_dir,*,positions=(.15,.5,.85)):
     for index,position in enumerate(positions):
         ms=min(max(0,round(info['duration_ms']*position)),max(0,info['duration_ms']-100))
         path=out_dir/f'frame-{index}.jpg'
-        run(['ffmpeg','-y','-v','error','-ss',str(ms/1000),'-i',str(proxy_path),'-frames:v','1',
+        run([media_binary('ffmpeg'),'-y','-v','error','-ss',str(ms/1000),'-i',str(proxy_path),'-frames:v','1',
              '-vf','scale=640:640:force_original_aspect_ratio=decrease','-threads','1',str(path)])
         if not path.exists():raise StageError('FRAME_MISSING','refinery','Unable to sample clip')
         frames.append(dict(path=str(path),source_time_ms=ms,proxy_time_ms=ms))

@@ -1,5 +1,6 @@
 """Goal-derived cards, source-bound associations and zero-token render checks."""
 from __future__ import annotations
+from .media_tools import media_binary
 import copy, hashlib, json, math, os, re, subprocess, tempfile, textwrap
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
@@ -87,7 +88,7 @@ def face_boxes(source,source_time,w,h):
         import cv2, numpy as np
         filt=(f'scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}' if h>w
               else f'scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2')
-        p=subprocess.run(['ffmpeg','-nostdin','-v','error','-ss',str(source_time/1000),'-i',source,
+        p=subprocess.run([media_binary('ffmpeg'),'-nostdin','-v','error','-ss',str(source_time/1000),'-i',source,
             '-vf',filt,'-frames:v','1','-f','rawvideo','-pix_fmt','rgb24','-threads','1','pipe:1'],capture_output=True,timeout=30)
         if p.returncode or len(p.stdout)!=w*h*3:return None
         pixels=np.frombuffer(p.stdout,dtype=np.uint8).reshape(h,w,3)
@@ -153,7 +154,7 @@ def preflight():
     """Portable PNG renderer: no drawtext, libass, or subtitle dependency."""
     from .render import _run, _ffmpeg
     result=_run(_ffmpeg()+['-filters'])
-    available=set(re.findall(r'^\s*[A-Z.]{3}\s+(\w+)\s',result.stdout+'\n'+result.stderr,re.M))
+    available=set(re.findall(r'^\s*[A-Z.|]{2,3}\s+(\w+)\s',result.stdout+'\n'+result.stderr,re.M))
     missing={'overlay','fade'}-available
     if missing:
         raise StageError('OVERLAY_FILTERS','assembler','PNG text compositing requires FFmpeg filters: '+', '.join(sorted(missing)))

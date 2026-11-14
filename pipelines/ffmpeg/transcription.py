@@ -5,6 +5,7 @@ $0.006/min rate is an estimate, not a verified current price or invoice. Success
 and unknown-failure reservations share the existing episode API ledger/cap.
 """
 from __future__ import annotations
+from .media_tools import media_binary
 from decimal import Decimal
 import hashlib
 import json
@@ -111,7 +112,7 @@ def prepare_audio(source,directory):
              f'asetpts=PTS-({origin:.9f})/TB,aresample=16000:async=1:first_pts=0,'
              f'apad,atrim=duration={duration:.9f}')
     codec=['-c:a','pcm_s16le'] if audio.suffix=='.wav' else ['-c:a','libmp3lame','-b:a','32k','-write_xing','1']
-    run(['ffmpeg','-nostdin','-y','-v','error','-copyts','-i',source['path'],
+    run([media_binary('ffmpeg'),'-nostdin','-y','-v','error','-copyts','-i',source['path'],
          '-map','0:a:0','-vn','-af',filters,'-ac','1','-ar','16000',*codec,str(audio)])
     if not 0<audio.stat().st_size<=MAX_AUDIO_BYTES:raise StageError('ASR_AUDIO_INVALID','refinery','Prepared audio exceeds upload limits',source['source_id'])
     return audio
