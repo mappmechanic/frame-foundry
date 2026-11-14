@@ -18,6 +18,7 @@ import tempfile
 
 REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path: sys.path.insert(0, str(REPO))
+from pipelines.ffmpeg.learning_view import read_curve, public_projection, read_policy_comparison, public_policy_projection
 from pipelines.ffmpeg.campaigns import load as load_campaign, project as project_campaign
 from PIL import Image
 from pipelines.ffmpeg.contracts import read_json, validate_report
@@ -213,6 +214,8 @@ def export_site(*, episodes_root=REPO/'episodes',evals_root=REPO/'evals',site_ro
                 write_json(dest/'run.json',run)
                 runs.append({k:run[k] for k in ('id','created_at','scores','cost','first_try_passed','elapsed_seconds','video_url','contact_sheet_url')} |
                             dict(data_url=url+'run.json',qa_passed=True))
+            write_json(runs_root/'learning.json', public_projection(read_curve(evals_root), [r['id'] for r in runs]))
+            write_json(runs_root/'policy-comparison.json', public_policy_projection(read_policy_comparison(evals_root), [r['id'] for r in runs]))
             runs.sort(key=lambda r:(timestamp(r['created_at']),r['id']),reverse=True)
             campaign=load_campaign(episodes/'.campaign-arizona-reels.json')
             failures=[eid for eid, report in latest.items() if report['gates']['passed'] is False]
