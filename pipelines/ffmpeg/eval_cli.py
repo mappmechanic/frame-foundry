@@ -68,6 +68,7 @@ def _parser():
     r.add_argument('--note')
     s = sub.add_parser('scoreboard', help='summarise evals/scoreboard.jsonl')
     _common(s)
+    s.add_argument('--table', action='store_true', help='read-only terminal demo table with actual QA status')
     s.add_argument('--json', action='store_true')
     s.add_argument('--lines', action='store_true', help='print the raw scoreboard lines (whole reports)')
     s.add_argument('--baseline', type=Path, help='baseline scoreboard JSONL (e.g. from main) to compare mean Q against')
@@ -146,7 +147,31 @@ def _rate(a, input_fn, interactive):
 
 
 def _scoreboard(a):
-    reports, bad = tools.load_reports(a.evals_root)
+    if a.table and (a.json or a.lines):
+        raise EvalToolError('--table cannot be combined with --json or --lines')
+    input_unavailable = False
+    try:
+        reports, bad = tools.load_reports(a.evals_root)
+    except OSError:
+        if not a.table:
+            raise
+        reports, bad, input_unavailable = [], 0, True
+    if a.table:
+        from .demo_scoreboard import render_table
+        print(render_table(reports, episodes_root=a.episodes_root, unreadable_lines=bad,
+                           input_unavailable=input_unavailable))
+        if input_unavailable:
+            return EXIT_UNAVAILABLE
+        if a.baseline:
+            # Keep baseline exit semantics, without leaking artifact paths/content.
+            try:
+                base, _ = tools.read_jsonl(a.baseline)
+            except OSError:
+                base = []
+            comparison = tools.compare_baseline(reports, base, tolerance=a.tolerance)
+            print('Baseline comparison: ' + comparison['status'])
+            return tools.compare_exit_code(comparison)
+        return EXIT_OK
     if a.lines:
         for r in reports:
             print(json.dumps(r, sort_keys=True, allow_nan=False))
