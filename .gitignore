@@ -33,3 +33,6 @@ site/.public-stage-*/
 site/.public-backup/
 site/.encode-*/
 site/.vercel/
+
+# Private memory and controlled learning experiments (including frozen seeds)
+evals/learning-curves/

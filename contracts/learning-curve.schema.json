@@ -1,0 +1,304 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Recorded paired memory experiment 1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "experiment_id",
+    "status",
+    "created_at",
+    "config_hash",
+    "arms",
+    "deltas",
+    "limitations"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "experiment_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,39}$"
+    },
+    "status": {
+      "enum": [
+        "pending",
+        "recorded"
+      ]
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "config_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "arms": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "memory_on",
+        "memory_off"
+      ],
+      "properties": {
+        "memory_on": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "iteration",
+              "episode_id",
+              "status",
+              "J",
+              "Q",
+              "model_usd",
+              "known_model_usd",
+              "cost_status",
+              "elapsed_seconds",
+              "lessons_used"
+            ],
+            "properties": {
+              "iteration": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100
+              },
+              "episode_id": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+              },
+              "status": {
+                "enum": [
+                  "passed",
+                  "failed",
+                  "unavailable"
+                ]
+              },
+              "J": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0,
+                "maximum": 1
+              },
+              "Q": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0,
+                "maximum": 1
+              },
+              "model_usd": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "known_model_usd": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "cost_status": {
+                "type": "string"
+              },
+              "elapsed_seconds": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "lessons_used": {
+                "type": "array",
+                "maxItems": 5,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            }
+          }
+        },
+        "memory_off": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "iteration",
+              "episode_id",
+              "status",
+              "J",
+              "Q",
+              "model_usd",
+              "known_model_usd",
+              "cost_status",
+              "elapsed_seconds",
+              "lessons_used"
+            ],
+            "properties": {
+              "iteration": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100
+              },
+              "episode_id": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+              },
+              "status": {
+                "enum": [
+                  "passed",
+                  "failed",
+                  "unavailable"
+                ]
+              },
+              "J": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0,
+                "maximum": 1
+              },
+              "Q": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0,
+                "maximum": 1
+              },
+              "model_usd": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "known_model_usd": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "cost_status": {
+                "type": "string"
+              },
+              "elapsed_seconds": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "lessons_used": {
+                "type": "array",
+                "maxItems": 5,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "deltas": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "iteration",
+          "comparable",
+          "J",
+          "Q",
+          "model_usd"
+        ],
+        "properties": {
+          "iteration": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "comparable": {
+            "type": "boolean"
+          },
+          "J": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "Q": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "model_usd": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "string",
+        "maxLength": 2000
+      }
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authorized_total_usd",
+        "prior_spend_usd",
+        "episode_reserve_usd",
+        "project_forecast_usd"
+      ],
+      "properties": {
+        "authorized_total_usd": {
+          "type": "number",
+          "minimum": 0
+        },
+        "prior_spend_usd": {
+          "type": "number",
+          "minimum": 0
+        },
+        "episode_reserve_usd": {
+          "type": "number",
+          "minimum": 0
+        },
+        "project_forecast_usd": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

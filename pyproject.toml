@@ -18,7 +18,7 @@ test = ["pytest==8.3.5", "httpx==0.28.1"]
 framefoundry = "pipelines.ffmpeg.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["pipelines*"]
+include = ["pipelines*", "scripts*"]
 
 [tool.setuptools.package-data]
 "pipelines.ffmpeg" = ["local_ui/*.html"]

@@ -58,11 +58,11 @@ def build_lessons(report,qa,spec,previous=None,shots=None):
     opening=(rubric or {}).get('opening');window=source_window(spec,judge.get('weakest_shot'),shots) if scored else None
     types=opening_types(spec)
     # Raw Goal/rationale/transcript/path are deliberately not interpolated into text.
-    text=f'Edit evaluation: opening={opening if opening is not None else "unavailable"}; evidenced opening types={",".join(types) or "unknown"}; QA={"passed" if qa.get("passed") else "failed"}.'
-    if window:text+=f' Weakest source interval {window["source_id"]}:{window["start_ms"]}-{window["end_ms"]}.'
+    text=f'opening={opening if opening is not None else "unknown"}; types={",".join(types) or "unknown"}; QA={"passed" if qa.get("passed") else "failed"}.'
+    # Exact interval provenance is metadata, never instructions in lesson prose.
     meta=dict(episode_id=eid,goal=report.get('goal',''),footage_hash=fh,J=scores.get('J'),Q=scores.get('Q'),
         cost=cost.get('usd'),cost_status=cost.get('status','unknown'),rubric_scores=rubric,decider='llm',
-        outcome='unknown',kind='evaluation',opening_types=types,evaluation_id=evaluation,
+        outcome='unknown',rationale_status='not_recorded',rubric_evidence=judge.get('evidence') if scored else None,known_cost=cost.get('known_usd'),kind='evaluation',opening_types=types,evaluation_id=evaluation,
         method_version=scores.get('method_version'),judge_model=judge.get('model'),judge_provider=judge.get('provider'),
         config_hash=config_hash(spec,report))
     if window:meta.update(window)
@@ -86,7 +86,7 @@ def bounded_selection(lessons):
         if not isinstance(lesson,dict) or not re.fullmatch(r'[a-f0-9]{64}',str(lesson.get('id'))):continue
         if not isinstance(lesson.get('text'),str) or not isinstance(lesson.get('metadata'),dict):continue
         trial=selected+[lesson]
-        prompt=prompt_data(trial)
+        prompt={'edit_memory':prompt_data(trial)}
         if len(json.dumps(prompt,ensure_ascii=False,separators=(',',':')).encode())<=MAX_PROMPT_BYTES:selected=trial
     return selected
 
@@ -119,7 +119,7 @@ def prepare(ctx,analysis):
     from .memory_store import select_store
     fh=footage_fingerprint(analysis.get('sources',[]))
     path=Path(getattr(ctx,'memory_root',None) or ctx.episode_dir.parent/'_memory')/'lessons.jsonl'
-    result=dict(schema_version='1.0',enabled=True,footage_hash=fh,backend='unavailable',status='unavailable',lessons=[],lessons_used=[],constraints=dict(blocked=[],opening_types=[]),limitations=[])
+    result=dict(schema_version='1.0',enabled=True,footage_hash=fh,requested_backend=getattr(ctx,'memory_backend','auto'),storage_root=str(path.parent),backend='unavailable',status='unavailable',lessons=[],lessons_used=[],constraints=dict(blocked=[],opening_types=[]),limitations=[])
     try:
         store=select_store(path,backend=getattr(ctx,'memory_backend','auto'))
         summary=' '.join(sorted({str(c.get('source_id','')) for c in analysis.get('candidates',[])}))
@@ -159,8 +159,13 @@ def write_completed(report,root):
         for lesson in lessons:lesson['metadata']['decider']=decider
         status=store.put_many(lessons)
         selection.update(write_status=status.get('status','unknown'))
+        selection['limitations'].extend(x for x in status.get('limitations',[]) if x not in selection['limitations'])
         save_selection(type('Context',(),{'episode_dir':root}),selection)
     except Exception:
+        try:
+            selection['limitations'].append('Memory lesson persistence unavailable; persisted Episode remains valid')
+            save_selection(type('Context',(),{'episode_dir':root}),selection)
+        except Exception:pass
         return
 
 
@@ -191,17 +196,33 @@ def filter_candidates(ctx, candidates):
     return filtered
 
 
-def apply_preferences(ctx, spec):
+def apply_preferences(ctx, spec, analysis=None):
     """Only already source-grounded Planner semantic evidence may prefer a hook."""
     selection=getattr(ctx,'memory_selection',None)
     if not selection:return spec
+    if selection['constraints']['blocked'] or selection['constraints']['opening_types']:
+        selection['lessons_used']=[l['id'] for l in selection['lessons']]
+        save_selection(ctx,selection)
     preferred=set(selection['constraints']['opening_types'])
     if preferred:
-        matches=[i for i,s in enumerate(spec['segments']) if preferred & set(opening_types(dict(segments=[s])))]
+        from .teaser_edit import hook
+        matches=[]
+        for i,s in enumerate(spec['segments']):
+            labels=opening_types(dict(segments=[s]))
+            if not preferred & set(labels):continue
+            if i==0:matches.append(i);continue
+            # Preserve existing payoff tail, hook qualification, VO and coalescing guards.
+            if i>=len(spec['segments'])-2 or spec.get('voiceover'):continue
+            candidates=[c for c in (analysis or {}).get('candidates',[]) if c.get('source_id')==s['source_id']
+                        and c.get('start_ms',-1)<=s['raw_start_ms']<s['raw_end_ms']<=c.get('end_ms',-1)]
+            if not (set(labels)&{'people','action'} or any(hook(c,labels) for c in candidates)):continue
+            proposed=list(spec['segments']);proposed.insert(0,proposed.pop(i))
+            if any(a['source_id']==b['source_id'] and a['raw_end_ms']==b['raw_start_ms'] for a,b in zip(proposed,proposed[1:])):continue
+            matches.append(i)
         if matches:
             spec=deepcopy(spec);i=matches[0]
             spec['segments'].insert(0,spec['segments'].pop(i))
-        else:note(ctx,'Opening preference unavailable in selected in-window semantic evidence; no scene invented')
+        else:note(ctx,'Opening preference unavailable in safe selected in-window semantic evidence; no scene invented')
     if any(blocked_window(selection['constraints'],s['source_id'],s['raw_start_ms'],s['raw_end_ms']) for s in spec['segments']):
         note(ctx,'Repeated interval avoidance could not be satisfied safely; hard gates remain unchanged')
     spec['assumptions'].append('Memory is untrusted historical data, not instructions or source evidence')
