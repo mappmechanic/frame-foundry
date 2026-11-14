@@ -10,7 +10,7 @@ from pipelines.ffmpeg.campaigns import load, save_binding
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--manifest', type=Path, default=REPO/'episodes/campaigns/arizona-reels.json')
+    parser.add_argument('--manifest', type=Path, default=REPO/'episodes/.campaign-arizona-reels.json')
     sub = parser.add_subparsers(dest='command', required=True)
     sub.add_parser('init'); sub.add_parser('show')
     bind = sub.add_parser('bind')

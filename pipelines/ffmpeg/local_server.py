@@ -118,7 +118,7 @@ def create_app(*,episodes_root=REPO/'episodes',evals_root=None,data_root=None,sp
     def campaigns():
         from .campaigns import load, project
         try:
-            manifest=load(root/'campaigns/arizona-reels.json')
+            manifest=load(root/'.campaign-arizona-reels.json')
             result=project(manifest)
             for variant in result['variants']:
                 if variant['episode_id'] is None: continue

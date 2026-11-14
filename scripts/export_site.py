@@ -210,8 +210,13 @@ def export_site(*, episodes_root=REPO/'episodes',evals_root=REPO/'evals',site_ro
                 runs.append({k:run[k] for k in ('id','created_at','scores','cost','first_try_passed','elapsed_seconds','video_url','contact_sheet_url')} |
                             dict(data_url=url+'run.json',qa_passed=True))
             runs.sort(key=lambda r:(timestamp(r['created_at']),r['id']),reverse=True)
-            campaign=load_campaign(episodes/'campaigns/arizona-reels.json')
+            campaign=load_campaign(episodes/'.campaign-arizona-reels.json')
             failures=[eid for eid, report in latest.items() if report['gates']['passed'] is False]
+            for directory in directories:
+                try:
+                    qa_failure=read_json(regular(directory,'qa-report.json')); validate_report(qa_failure)
+                    if qa_failure['episode_id']==directory.name and qa_failure['passed'] is False: failures.append(directory.name)
+                except (ValueError,KeyError,TypeError,OSError,RuntimeError): pass
             write_json(runs_root/'campaigns.json',dict(schema_version='1.0',campaigns=[project_campaign(campaign,runs,failed_ids=failures)]))
             now=datetime.now(timezone.utc).isoformat(); lead=runs[0]['id'] if runs else None
             write_json(runs_root/'index.json',dict(schema_version='1.0',generated_at=now,mode='recorded-demo',lead_run_id=lead,

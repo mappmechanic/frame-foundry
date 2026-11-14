@@ -246,3 +246,33 @@ def test_factory_commit_provenance_is_local_scoped_and_safe(setup):
         expected=subprocess.run(['git','rev-list','--count',factory['base_sha']+'..'+factory['head_sha']],cwd=exporter.REPO,capture_output=True,text=True,check=True)
         assert factory['commit_count']==int(expected.stdout)
     assert 'SECRET' not in json.dumps(factory)
+
+
+def test_campaign_publication_uses_existing_verified_allowlist(setup,report,monkeypatch):
+    from pipelines.ffmpeg.campaigns import save_binding
+    manifest=setup[0]/'.campaign-arizona-reels.json'
+    save_binding(manifest,'sedona-kids','az-0900')
+    save_binding(manifest,'halloween-uptown','az-missing')
+    run_fixture(setup,report)
+    monkeypatch.setattr(exporter,'encode_video',fake_encoder)
+    export(setup)
+    data=json.loads((setup[2]/'public/runs/campaigns.json').read_text())
+    variants=data['campaigns'][0]['variants']
+    assert [v['status'] for v in variants]==['verified','unavailable','planned']
+    assert variants[0]['run']['data_url']=='/runs/az-0900/run.json'
+    assert variants[1]['run'] is None
+    assert 'SECRET' not in json.dumps(data)
+
+
+def test_campaign_metadata_is_not_an_episode(setup):
+    from pipelines.ffmpeg.campaigns import save_binding
+    save_binding(setup[0]/'.campaign-arizona-reels.json')
+    assert export(setup)==dict(exported=0,omitted=0,lead_run_id=None)
+
+
+def test_invalid_campaign_retains_previous_publication(setup):
+    export(setup)
+    previous=(setup[2]/'public/runs/index.json').read_bytes()
+    (setup[0]/'.campaign-arizona-reels.json').write_text('{invalid')
+    with pytest.raises(ValueError): export(setup)
+    assert (setup[2]/'public/runs/index.json').read_bytes()==previous

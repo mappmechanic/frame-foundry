@@ -276,3 +276,18 @@ def test_make_ui_presenter_loads_recent_episode_reports_without_dispatch(rig,mon
     assert all(eid in presenter for eid in ('az-0700','az-0810','az-0835'))
     assert all(q in presenter for q in ('0.825','0.756','0.808'))
     assert not spawned
+
+
+def test_campaign_reads_are_truthful_and_never_dispatch(rig):
+    from pipelines.ffmpeg.campaigns import save_binding
+    c,m,folder,spawned=rig
+    data=c.get('/api/campaigns').json()
+    assert [v['status'] for v in data['campaigns'][0]['variants']]==['planned']*3
+    manifest=m.root/'.campaign-arizona-reels.json'
+    save_binding(manifest,'halloween-uptown','az-missing')
+    variants=c.get('/api/campaigns').json()['campaigns'][0]['variants']
+    assert variants[1]['status']=='unavailable' and 'metrics' not in variants[1]
+    assert not spawned
+    manifest.write_text('{invalid')
+    assert c.get('/api/campaigns').status_code==503
+    assert not spawned
