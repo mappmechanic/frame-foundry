@@ -1,7 +1,8 @@
 """Download private release outside Git and invoke the real pipeline.
 
-No API key loading or implicit ASR/fixture substitution. Use --visual-only
-explicitly for a diagnostic run when local WhisperX assets are unavailable.
+No API key loading or fixture substitution. Real ASR defaults to local WhisperX
+with an OpenAI word-timestamp fallback when OPENAI_API_KEY is configured.
+--visual-only remains explicit no-ASR diagnostic mode; it never passes word QA.
 """
 import argparse
 import os
@@ -38,6 +39,7 @@ def main(argv=None):
     parser.add_argument('--episode')
     parser.add_argument('--episodes-root', type=Path)
     parser.add_argument('--visual-only', action='store_true')
+    parser.add_argument('--asr-provider',choices=['auto','local','openai'],default='auto')
     parser.add_argument('--evals-root',type=Path)
     parser.add_argument('--no-planner-retry',action='store_true')
     parser.add_argument('--fetch-only', action='store_true')
@@ -48,7 +50,7 @@ def main(argv=None):
     if args.fetch_only:
         print(footage)
         return 0
-    command = [sys.executable, '-m', 'pipelines.ffmpeg.cli', 'run', '--footage-dir', str(footage), '--goal', GOAL]
+    command = [sys.executable, '-m', 'pipelines.ffmpeg.cli', 'run', '--footage-dir', str(footage), '--goal', GOAL,'--asr-provider',args.asr_provider]
     if args.episode: command += ['--episode', args.episode]
     if args.episodes_root: command += ['--episodes-root', str(args.episodes_root)]
     if args.visual_only: command += ['--visual-only']

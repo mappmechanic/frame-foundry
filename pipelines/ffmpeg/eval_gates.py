@@ -563,10 +563,16 @@ def _word_check(root, analysis, shots, checks, limitations):
                                              'Visual-only diagnostic: no speech evidence; word-safe cuts unverified',
                                              dict(transcription_status=status))
         return
-    if status not in ('fixture', 'local_asr'):
+    if status not in ('fixture', 'local_asr','openai_asr','mixed_asr'):
         checks['word_cut_integrity'] = check('word_cut_integrity', 'not_run', 'Transcription provenance unknown',
                                              dict(transcription_status=status))
         return
+    if status in ('openai_asr','mixed_asr'):
+        covered=(analysis or {}).get('transcription_sources',{})
+        expected={s['source_id'] for s in analysis.get('sources',[]) if s.get('has_audio')}
+        if not expected.issubset(covered):
+            checks['word_cut_integrity']=check('word_cut_integrity','not_run','ASR source coverage incomplete')
+            return
     if not shots:
         checks['word_cut_integrity'] = check('word_cut_integrity', 'not_run', 'Timeline shots unavailable')
         return

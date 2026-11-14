@@ -320,8 +320,8 @@ def _fallback(analysis, intent, cause):
             seen.add(candidate[1])
     candidates = first + rest
     selections, remaining = [], intent.target_duration_ms
-    # Five-second seeds, then extend using only the remaining unique scene coverage.
-    for cap in (5000, intent.target_duration_ms):
+    # Three-second teaser seeds; source bounds and word protection take priority.
+    for cap in (3000, intent.target_duration_ms):
         for _, sid, a, b, reason in candidates:
             free = [(a, b)]
             for selected in selections:

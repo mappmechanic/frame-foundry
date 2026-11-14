@@ -292,8 +292,41 @@
           "enum": [
             "fixture",
             "local_asr",
-            "visual_only_unavailable"
+            "visual_only_unavailable",
+            "openai_asr",
+            "mixed_asr"
           ]
+        },
+        "transcription_sources": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "provider": {
+                "enum": [
+                  "openai",
+                  "local"
+                ]
+              },
+              "model": {
+                "type": "string"
+              },
+              "cached": {
+                "type": "boolean"
+              },
+              "word_count": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "provider",
+              "model",
+              "cached",
+              "word_count"
+            ]
+          }
         }
       },
       "required": [
@@ -604,6 +637,10 @@
               },
               "overrun": {
                 "type": "boolean"
+              },
+              "audio_duration_ms": {
+                "type": "integer",
+                "minimum": 0
               }
             },
             "required": [

@@ -44,7 +44,7 @@ MAX_TOKEN_BUDGET = 1_000_000
 CONTEXT_TOKENS = 128_000              # hard per-request ceiling, NOT the reservation
 PROTOCOL_OVERHEAD_TOKENS = 1024       # message framing, roles, JSON-mode wrapper
 IMAGE_TOKEN_CEILING = 4000            # conservative per-image cap / unknown-model value
-ROLE_CALL_CAPS = {'planner': 2, 'judge': 1, 'pairwise':2}
+ROLE_CALL_CAPS = {'planner': 2, 'judge': 1, 'pairwise':2, 'transcription':40}
 BUDGET_ENV = 'FRAMEFOUNDRY_EPISODE_API_BUDGET_USD'
 TOKEN_BUDGET_ENV = 'FRAMEFOUNDRY_EPISODE_TOKEN_BUDGET'
 TIMEOUT_SECONDS = 45
@@ -205,7 +205,7 @@ def _load_ledger(path: Path) -> dict:
                     continue
                 if not _is_number(value):
                     raise ValueError()
-            for field in ('reserved_input_tokens', 'reserved_output_tokens'):
+            for field in ('reserved_input_tokens', 'reserved_output_tokens', 'audio_duration_ms'):
                 if field in call and not _is_count(call[field]):
                     raise ValueError()
             for field in ('input_tokens', 'output_tokens'):

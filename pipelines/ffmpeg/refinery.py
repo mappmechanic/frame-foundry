@@ -1,7 +1,7 @@
 """Source discovery, proxy evidence and explicitly local WhisperX transcription."""
 from pathlib import Path
 from fractions import Fraction
-import contextlib, os, socket
+import contextlib, os, socket, tempfile
 from PIL import Image, ImageStat, ImageFilter, ImageChops
 from .contracts import StageError,atomic_write_json
 from .proxy import probe,create_proxy,sample_keyframes,run
@@ -25,7 +25,13 @@ def transcribe_words(source,*,model_dir,device='cpu'):
         import whisperx
         with _offline_models():
             model=whisperx.load_model(str(root/'transcription'),device,compute_type='int8')
-            audio=whisperx.load_audio(source['path']); result=model.transcribe(audio,batch_size=4)
+            # Match the renderer/OpenAI common timestamp origin, including any
+            # real delayed-audio leading silence. Do not reset audio independently.
+            from .transcription import prepare_audio
+            with tempfile.TemporaryDirectory(prefix='local-asr-') as directory:
+                prepared=prepare_audio(source,directory)
+                audio=whisperx.load_audio(str(prepared))
+            result=model.transcribe(audio,batch_size=4)
             if not result['segments']:return []
             align,metadata=whisperx.load_align_model(language_code=result['language'],device=device,model_name=str(root/'alignment'))
             aligned=whisperx.align(result['segments'],align,metadata,audio,device)

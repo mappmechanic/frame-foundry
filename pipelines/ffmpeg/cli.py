@@ -10,6 +10,7 @@ from .refinery import run_refinery
 from .planner import plan_teaser
 from .assembler import assemble
 from .qa_validator import validate_candidate
+from .transcription import TranscriptionRouter
 
 def _retain_diagnostic(directory, result, report):
     """Keep failed media and its exact timeline/spec; never advertise delivery."""
@@ -23,7 +24,7 @@ def _retain_diagnostic(directory, result, report):
     report.update(output_path=None, diagnostic_path='diagnostic.mp4', timeline_path='timeline.otio')
 
 
-def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixture=None,provider='env',visual_only=False,evals_root=None,eval_labels=None,planner_retry=True):
+def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixture=None,provider='env',visual_only=False,evals_root=None,eval_labels=None,planner_retry=True,asr_provider='auto'):
     if visual_only and transcript_fixture is not None:raise StageError('INPUT_CONFLICT','refinery','Choose visual-only or a transcript fixture, not both')
     if not goal.strip():raise StageError('GOAL_EMPTY','refinery','Goal must not be blank')
     if not Path(footage_dir).is_dir():raise StageError('INPUT_EMPTY','refinery','Footage directory is unavailable')
@@ -41,10 +42,13 @@ def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixt
                 except ProviderBudgetError:raise
                 except ProviderError:active_provider=None
             budget_note=None
-            if active_provider is not None:
+            cloud_asr_enabled=not visual_only and transcript_fixture is None and asr_provider!='local' and bool(os.environ.get('OPENAI_API_KEY','').strip())
+            if active_provider is not None or cloud_asr_enabled:
                 try:reserve_project_episode(Path(os.environ.get('FRAMEFOUNDRY_PROJECT_BUDGET_DIR',str(Path(__file__).resolve().parents[2]))),str(directory))
                 except ProviderBudgetError:raise
-                except ProviderError as e:active_provider=None;budget_note=str(e)
+                except ProviderError as e:
+                    if cloud_asr_enabled:raise ProviderBudgetError('Project allowance unavailable; ASR and inference blocked') from None
+                    active_provider=None;budget_note=str(e)
             fixture=read_json(transcript_fixture) if transcript_fixture is not None else None
             def fixture_words(source):
                 if fixture.get('schema_version')!='1.0':raise StageError('FIXTURE_INVALID','refinery','Unsupported fixture version')
@@ -52,8 +56,10 @@ def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixt
                 if mapping is None or mapping['filename']!=Path(source['path']).name or abs(mapping['duration_ms']-source['duration_ms'])>150:
                     raise StageError('FIXTURE_INVALID','refinery','Fixture source mapping mismatch',source['source_id'])
                 return [w for w in fixture['words'] if w['source_id']==source['source_id']]
-            save_state(ctx,'refinery');analysis=run_refinery(ctx,footage_dir,transcriber=fixture_words if fixture is not None else (lambda source: []) if visual_only else None)
-            analysis['transcription_status']='visual_only_unavailable' if visual_only else 'fixture' if fixture is not None else 'local_asr'
+            router=TranscriptionRouter(ctx,mode=asr_provider) if fixture is None and not visual_only else None
+            save_state(ctx,'refinery');analysis=run_refinery(ctx,footage_dir,transcriber=fixture_words if fixture is not None else (lambda source: []) if visual_only else router)
+            analysis['transcription_status']='visual_only_unavailable' if visual_only else 'fixture' if fixture is not None else router.status
+            if router is not None:analysis['transcription_sources']=router.sources
             atomic_write_json(directory/'analysis.json',analysis)
             if fixture and any(w['source_id'] not in {s['source_id'] for s in analysis['sources']} for w in fixture['words']):raise StageError('FIXTURE_INVALID','refinery','Unknown fixture word source')
             save_state(ctx,'planner');spec=plan_teaser(ctx,analysis,provider=active_provider)
@@ -171,13 +177,17 @@ def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixt
 def _run_main(argv=None):
     p=argparse.ArgumentParser();p.add_argument('--footage-dir',required=True,type=Path);p.add_argument('--goal',required=True);p.add_argument('--episode');p.add_argument('--episodes-root',type=Path,default=Path(__file__).resolve().parents[2]/'episodes');p.add_argument('--transcript-fixture',type=Path)
     p.add_argument('--evals-root',type=Path);p.add_argument('--eval-labels',type=Path);p.add_argument('--no-planner-retry',action='store_true')
+    p.add_argument('--asr-provider',choices=['auto','local','openai'],default='auto',help='Prefer local WhisperX; auto falls back to OpenAI word timestamps when a key is configured')
     p.add_argument('--visual-only',action='store_true',help='Explicit diagnostic mode without ASR; speech integrity remains unverified')
     args=p.parse_args(argv)
     def terminate(signum,frame):raise KeyboardInterrupt()
     old=signal.signal(signal.SIGTERM,terminate)
     try:
-        report=run_episode(args.footage_dir,args.goal,episodes_root=args.episodes_root,episode_id=args.episode,transcript_fixture=args.transcript_fixture,visual_only=args.visual_only,evals_root=args.evals_root,eval_labels=args.eval_labels,planner_retry=not args.no_planner_retry)
-        print(json.dumps(dict(episode_id=report['episode_id'],result=report['result'],passed=report['passed'],error=report['error'],output_path=report['output_path'],diagnostic_path=report.get('diagnostic_path'),tokens=dict(input=sum(c['input_tokens'] or 0 for c in report['ai_usage']),output=sum(c['output_tokens'] or 0 for c in report['ai_usage']),complete=all(c['input_tokens'] is not None and c['output_tokens'] is not None for c in report['ai_usage'] if c['status']!='blocked')),cost=report['cost'],goal_judge=report['goal_judge'],coverage=report['coverage'])))
+        report=run_episode(args.footage_dir,args.goal,episodes_root=args.episodes_root,episode_id=args.episode,transcript_fixture=args.transcript_fixture,visual_only=args.visual_only,evals_root=args.evals_root,eval_labels=args.eval_labels,planner_retry=not args.no_planner_retry,asr_provider=args.asr_provider)
+        evaluation_path=Path(args.episodes_root)/report['episode_id']/'eval-report.json'
+        evaluation=read_json(evaluation_path) if evaluation_path.is_file() else None
+        metrics=dict(Q=evaluation['scores']['Q'],J=evaluation['scores']['J'],D=evaluation['scores']['D'],G=evaluation['scores']['G'],quality_per_dollar=evaluation['model_cost']['quality_per_dollar']) if evaluation else dict(Q=None,J=None,D=None,G=None,quality_per_dollar=None)
+        print(json.dumps(dict(evaluation=metrics,episode_id=report['episode_id'],result=report['result'],passed=report['passed'],error=report['error'],output_path=report['output_path'],diagnostic_path=report.get('diagnostic_path'),tokens=dict(input=sum(c['input_tokens'] or 0 for c in report['ai_usage']),output=sum(c['output_tokens'] or 0 for c in report['ai_usage']),complete=all(c['input_tokens'] is not None and c['output_tokens'] is not None for c in report['ai_usage'] if c['status']!='blocked' and c['role']!='transcription')),cost=report['cost'],goal_judge=report['goal_judge'],coverage=report['coverage'])))
         return 0 if report['passed'] else 1
     except StageError as e:print(e);return 2
     except KeyboardInterrupt:return 130

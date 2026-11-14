@@ -267,8 +267,8 @@ def model_cost(episode_dir, Q):
     tokens_in = tokens_out = 0
     complete = not unknown_llm
     for call in llm_calls:
-        if call.get('status') == 'blocked':
-            continue
+        if call.get('status') == 'blocked' or call.get('role')=='transcription':
+            continue  # Duration-billed ASR has no LLM token count.
         i, o = call.get('input_tokens'), call.get('output_tokens')
         if type(i) is int and type(o) is int:
             tokens_in += i

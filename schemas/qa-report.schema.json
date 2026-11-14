@@ -285,7 +285,8 @@
           "role": {
             "enum": [
               "planner",
-              "judge"
+              "judge",
+              "transcription"
             ]
           },
           "provider": {
