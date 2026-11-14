@@ -261,3 +261,18 @@ def test_low_disk_api_fails_without_launch(rig,monkeypatch):
     response=c.post('/api/jobs',json=payload(folder))
     assert response.status_code==400 and '1.000 GB required' in response.json()['detail']
     assert not spawned
+
+
+def test_make_ui_presenter_loads_recent_episode_reports_without_dispatch(rig,monkeypatch):
+    from tests.test_scoreboard_html import report as strict_report_fixture
+    make_report=strict_report_fixture.__wrapped__()
+    c,m,folder,spawned=rig
+    monkeypatch.setattr(factory_history.subprocess,'run',lambda *a,**k:SimpleNamespace(returncode=1,stdout=''))
+    m.evals.mkdir(exist_ok=True)
+    records=[make_report(eid,q=q) for eid,q in [('az-0700',.825),('az-0810',.756),('az-0835',.808)]]
+    (m.evals/'scoreboard.jsonl').write_text(''.join(json.dumps(r)+'\n' for r in records))
+    response=c.get('/scoreboard');assert response.status_code==200
+    presenter=response.text.split('<details>')[0]
+    assert all(eid in presenter for eid in ('az-0700','az-0810','az-0835'))
+    assert all(q in presenter for q in ('0.825','0.756','0.808'))
+    assert not spawned

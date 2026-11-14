@@ -346,3 +346,17 @@ def test_resolved_parent_alias_cannot_overwrite_input(tmp_path):
     with pytest.raises(ValueError,match='input'):
         export_html(alias/'x.html','bad',episodes_root=tmp_path/'episodes',input_paths=[source])
     assert source.read_text()=='keep'
+
+
+def test_presenter_includes_three_latest_mac_checks_from_local_reports(report,tmp_path):
+    # Synthetic report fixtures test presentation only; never live Mac verification.
+    records=[report('az-0700',q=.825,usd=.038),report('az-0810',q=.756,usd=.035),report('az-0835',q=.808,usd=.035)]
+    out=render_html(records,episodes_root=tmp_path)
+    presenter=out.split('<details>')[0]
+    assert all(eid in presenter for eid in ('az-0700','az-0810','az-0835'))
+    assert all(q in presenter for q in ('0.825','0.756','0.808'))
+    assert 'az-0835' in presenter and out.count('class="point"')==3
+    missing=render_html(records[:1],episodes_root=tmp_path)
+    assert '<td>az-0810</td><td>N/A</td>' in missing
+    assert '<td>az-0835</td><td>N/A</td>' in missing
+    assert '0.808' not in missing

@@ -512,3 +512,38 @@ stays generic rather than inventing an event. An exact comparison with Mac
 az-0700/az-0810 requires their saved timelines/narratives/evaluations; these
 artifacts are not present in this workspace, and a recovered live J/Q score
 has not been claimed. Campaign work remains deferred until Mac UI verification.
+
+
+### Demo polish after az-0835
+
+Narration now uses one full sentence with at most two retained, frame-grounded
+subjects, never a bare one-word subject line. With only market evidence:
+“These selected moments highlight the market.” With parade and market evidence:
+“From the parade to the market, these moments stood out.” New Episodes use
+`subjects-v3`; historical v1/v2 narration remains verifiable without rewriting it.
+
+Before rendering, the pipeline can reuse the latest compatible scored Episode's
+weakest source interval automatically (`--repair-from` still selects one explicitly).
+It tries the next-best unused ranked, evidenced people window without paid calls.
+No index-only shot-08 swap: footage/render hashes, Goal/duration/aspect, exact source
+times, duration/word protection, hook/closing and voiced subjects are guarded. A
+stale judgment or no safe alternative is a disclosed no-op. The new render gets
+its own ordinary evaluation; old J/Q is never copied. Sharpness only breaks equal
+scores, with finite measured in-window evidence; base scores, source diversity,
+closing quality floors and D normalizers are unchanged.
+
+After the one-line dependency install above, `make ui` launches the existing venv
+without recreating it or making paid calls. For a keyed Mac demo with optional
+`.env` loading and explicit existing history roots:
+
+```sh
+(set -a; [ ! -f .env ] || . ./.env; set +a; FRAMEFOUNDRY_LLM_PROVIDER=openai make ui ARGS='--port 8765 --episodes-root episodes --evals-root evals')
+```
+
+Open `http://127.0.0.1:8765`. The presenter scoreboard now includes az-0700,
+az-0810 and az-0835 in its Q trend. It reads actual `evals/scoreboard.jsonl`
+records; absent records/scores show N/A, not supplied or inferred metrics. If
+your Mac uses different storage paths, pass those via `--episodes-root` and
+`--evals-root`; do not rerun paid processing just to populate the presentation.
+Successful `work/` media cleanup and the 1 GB disk admission floor remain enabled.
+Campaign work remains deferred.

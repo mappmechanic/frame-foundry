@@ -14,7 +14,7 @@ from .demo_scoreboard import _qa_pass, validated_reports
 from .evaluator import sha256_file
 from .factory_history import collect_factory_history
 
-TREND_EPISODES = ('az-0500', 'az-0550', 'az-0600', 'az-0700')
+TREND_EPISODES = ('az-0500', 'az-0550', 'az-0600', 'az-0700', 'az-0810', 'az-0835')
 
 
 def _escape(value):
@@ -105,8 +105,7 @@ def _table(headers, rows):
 def _trend(rows):
     by_id = {r['episode_id']: r['scores']['Q'] for r in rows if r['label'] != '[unsafe-id]'}
     items = list(TREND_EPISODES[:3])
-    if TREND_EPISODES[3] in by_id:
-        items.append(TREND_EPISODES[3])
+    items.extend(TREND_EPISODES[3:])
     svg = ['<svg viewBox="0 0 720 210" role="img" aria-labelledby="trend-title trend-desc">',
            f'<title id="trend-title">Latest Q trend: {items[0]} to {items[-1]}</title>',
            '<desc id="trend-desc">Missing episodes or scores are N/A gaps, never zero. Q scale 0 to 1.</desc>']
