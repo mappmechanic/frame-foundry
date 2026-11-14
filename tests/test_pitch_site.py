@@ -105,6 +105,15 @@ const assert=require('node:assert/strict'),fs=require('node:fs');
  assert(await page.locator('.slide:not([hidden])').evaluate(e=>getComputedStyle(e).animationName==='none'));
  await page.setViewportSize({width:390,height:844});await open();
  for(let n=1;n<=8;n++){assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.screenshot({path:`${evidence}/test-only-mobile-slide-${n}.png`,fullPage:true});if(n<8){await page.locator('.slide:not([hidden])').focus();await page.keyboard.press('ArrowRight');}}
+ // Optional comparison snapshots must not turn unsupported evidence into a win.
+ for(const comparison of [null,{}, {status:'recorded',qualified:false},
+   {status:'recorded',qualified:true,arms:{llm:{episode_id:'test-only-old',q_per_dollar:11.9},decisions:{episode_id:'test-only-new',q_per_dollar:40.6}}}]){
+  board.decisions_comparison=comparison;await open();await go(7);
+  const decisions=await page.locator('.slide:not([hidden])').textContent();
+  assert.match(decisions,/pending evaluation/);assert.match(decisions,/promotion: not established/);
+  assert(!decisions.includes('11.9')&&!decisions.includes('40.6'));
+ }
+ delete board.decisions_comparison;
  // Estimated, incomplete and zero-cost states never fabricate efficiency.
  board.cohort.estimated=true;runs[1].cost.status='estimated';await open();assert.match(await text('cost'),/est\./);assert.match(await text('trend'),/estimated/);
  board.cohort.cost_complete=false;runs[0].cost.status='unknown';runs[1].cost.usd=0;await open();assert.equal(await text('cost'),'N/A');assert.match(await text('trend'),/unavailable/);
