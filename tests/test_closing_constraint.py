@@ -159,3 +159,49 @@ def test_scene_luma_uses_only_in_window_samples_and_trimmed_samples():
     s = segment(c)
     s['raw_end_ms'] = 8000
     assert not closing_qualifies(c,s)  # only dark .1 sample remains
+
+
+@pytest.mark.parametrize('metric', ['sharpness', 'exposure'])
+def test_bad_selected_quality_is_not_promoted_to_final_payoff(metric):
+    pool = analysis()['candidates']
+    hook = evidence(pool[1])
+    good = evidence(pool[8])
+    bad = evidence(pool[15])
+    bad['quality'][metric] = 0
+    result = run(pool, [segment(hook), segment(bad, semantic_labels=['scenic_wide']), segment(good)])
+    assert matching(pool,result['segments'][-1]) == good
+    assert matching(pool,result['segments'][-1]) != bad
+
+
+def test_full_speech_candidate_cannot_be_truncated_to_replace_short_tail():
+    from pipelines.ffmpeg.teaser_edit import enforce_closing
+    pool = analysis()['candidates']
+    first, weak = pool[1], pool[8]
+    speech = evidence(deepcopy(pool[-1]))
+    speech.update(edit_kind='speech', start_ms=10000, end_ms=12900)
+    evidence(speech)
+    entries = [(first,segment(first),()), (weak,segment(weak),())]
+    assert enforce_closing(entries,[speech],{},set()) == entries
+
+
+def test_overlapping_unused_candidate_cannot_replace_tail():
+    from pipelines.ffmpeg.teaser_edit import enforce_closing
+    pool = analysis()['candidates']
+    first, weak = pool[1], pool[8]
+    overlap = evidence(deepcopy(first))
+    overlap.update(candidate_id='overlap', start_ms=first['start_ms']+100, end_ms=first['end_ms']+500)
+    evidence(overlap)
+    entries = [(first,segment(first),()), (weak,segment(weak),())]
+    assert enforce_closing(entries,[overlap],{},set()) == entries
+
+
+def test_existing_separate_quality_timestamp_survives_regeneration():
+    a = analysis()
+    source = a['sources'][0]
+    source['keyframes'] = [dict(path='inside.jpg', source_time_ms=8000)]
+    base = dict(source_id=source['source_id'], start_ms=0, end_ms=20000,
+                frame_in_window=True, frame_time_ms=8000, quality_frame_time_ms=1000,
+                quality=dict(sharpness=99, exposure=99), audio={})
+    c = next(c for c in short_candidates(a,[base]) if c['source_id']==source['source_id'] and c['frame_in_window'])
+    assert c['quality_frame_time_ms'] is None
+    assert not closing_qualifies(c,segment(c),['scenic_wide'])

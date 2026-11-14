@@ -46,7 +46,7 @@ def short_candidates(analysis, base):
                 c.update(start_ms=a,end_ms=b,edit_kind=kind,
                     candidate_id='candidate-'+hashlib.sha256(f'{sid}:{a}:{b}:short4'.encode()).hexdigest()[:20])
                 # Preserve measurement provenance before replacing the preview frame.
-                base_time=c.get('frame_time_ms')
+                base_time=c.get('quality_frame_time_ms',c.get('frame_time_ms'))
                 base_in_window=bool(c.get('frame_in_window') and base_time is not None and a<=base_time<b)
                 c['quality_frame_time_ms']=base_time if base_in_window else None
                 if not base_in_window:
@@ -192,7 +192,7 @@ def enforce_closing(entries, pool, semantic, blocked):
                     continue
                 # Unused means nonoverlapping with ALL selected edits, even the replaced shot.
                 if any(c['source_id'] == e[1]['source_id'] and c['start_ms'] < e[1]['raw_end_ms']
-                       and e[1]['raw_start_ms'] < end for e in trial):
+                       and e[1]['raw_start_ms'] < end for e in entries + trial):
                     continue
                 alternatives.append((c, segment, labels))
             for replacement in sorted(alternatives, key=lambda e: -score(e[0], e[2])):
@@ -268,7 +268,6 @@ def complete(analysis,intent,response,pool):
                     if first['source_id']!=last_entry['source_id'] or first['raw_end_ms']!=last_entry['raw_start_ms']:
                         index=i;break
         ordered.append(pending.pop(index))
-    ordered=enforce_closing(ordered,pool,semantic,blocked)
     result['segments']=[s for _,s,_ in ordered]
     if not result['segments']:
         from .contracts import StageError
@@ -280,6 +279,10 @@ def complete(analysis,intent,response,pool):
         for c,s,_ in reversed(ordered):
             if c.get('edit_kind')=='broll' and s['raw_end_ms']-s['raw_start_ms']>delta:
                 s['raw_end_ms']-=delta;break
+    # Normalize the raw budget BEFORE payoff selection so a final trim cannot
+    # silently remove the qualifying frame or detector cue.
+    ordered=enforce_closing(ordered,pool,semantic,blocked)
+    result['segments']=[s for _,s,_ in ordered]
     total=sum(s['duration_ms'] for s in analysis['sources'])
     usable=sum(c['end_ms']-c['start_ms'] for c in pool)
     result['assumptions'].append(f'Source duration {total}ms; short speech/b-roll window coverage {usable}ms; selected encoded duration {frames*1000/30:.0f}ms. Eight-window model view is not total footage.')
