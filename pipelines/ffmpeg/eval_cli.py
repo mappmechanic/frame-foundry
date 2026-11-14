@@ -149,7 +149,8 @@ def _rate(a, input_fn, interactive):
 def _scoreboard(a):
     if a.table and (a.json or a.lines):
         raise EvalToolError('--table cannot be combined with --json or --lines')
-    input_unavailable = False
+    scoreboard_path = a.evals_root / tools.SCOREBOARD_NAME
+    input_unavailable = a.table and scoreboard_path.exists() and not scoreboard_path.is_file()
     try:
         reports, bad = tools.load_reports(a.evals_root)
     except OSError:
@@ -157,7 +158,7 @@ def _scoreboard(a):
             raise
         reports, bad, input_unavailable = [], 0, True
     if a.table:
-        from .demo_scoreboard import render_table
+        from .demo_scoreboard import render_table, validated_reports
         print(render_table(reports, episodes_root=a.episodes_root, unreadable_lines=bad,
                            input_unavailable=input_unavailable))
         if input_unavailable:
@@ -165,10 +166,13 @@ def _scoreboard(a):
         if a.baseline:
             # Keep baseline exit semantics, without leaking artifact paths/content.
             try:
-                base, _ = tools.read_jsonl(a.baseline)
+                base, base_bad = tools.read_jsonl(a.baseline)
             except OSError:
-                base = []
-            comparison = tools.compare_baseline(reports, base, tolerance=a.tolerance)
+                base, base_bad = [], 0
+            current, _ = validated_reports(reports)
+            baseline, baseline_invalid = validated_reports(base)
+            comparison = tools.compare_baseline(current, baseline, tolerance=a.tolerance)
+            print(f'Baseline invalid/corrupt lines: {base_bad + baseline_invalid}')
             print('Baseline comparison: ' + comparison['status'])
             return tools.compare_exit_code(comparison)
         return EXIT_OK

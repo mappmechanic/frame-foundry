@@ -29,12 +29,8 @@ def _number(value, *, digits=3):
     return 'N/A' if value is None else f'{value:.{digits}f}'
 
 
-def render_table(reports, *, episodes_root: Path, unreadable_lines=0, input_unavailable=False):
-    """Validate before latest selection; count rejected lines without echoing them.
-
-    Costs are cumulative snapshots, so history is never summed. QA is read from
-    the supplied episodes root and describes current artifacts, not eval history.
-    """
+def validated_reports(reports):
+    """Return strict reports and rejection count without displaying their contents."""
     valid = []
     invalid = 0
     for report in reports:
@@ -44,12 +40,22 @@ def render_table(reports, *, episodes_root: Path, unreadable_lines=0, input_unav
             invalid += 1
         else:
             valid.append(report)
+    return valid, invalid
+
+
+def render_table(reports, *, episodes_root: Path, unreadable_lines=0, input_unavailable=False):
+    """Validate before latest selection; count rejected lines without echoing them.
+
+    Costs are cumulative snapshots, so history is never summed. QA is read from
+    the supplied episodes root and describes current artifacts, not eval history.
+    """
+    valid, invalid = validated_reports(reports)
     latest = sorted(tools.latest_per_episode(valid), key=lambda r: r['episode_id'])
     headers = ['episode', 'cost USD', 'cost status', 'known_usd*', 'J', 'Q', 'D',
                'quality_per_dollar', 'wall time', 'G/pass', 'QA pass']
     rows = []
     qa_known = qa_passed = cost_known = 0
-    known_spend = 0.0
+    known_spend = total_spend = 0.0
     known_missing = 0
     score_missing = {key: 0 for key in ('J', 'Q', 'D')}
     wall_missing = 0
@@ -68,7 +74,9 @@ def render_table(reports, *, episodes_root: Path, unreadable_lines=0, input_unav
             known_missing += 1
         else:
             known_spend += known
-        cost_known += usd is not None
+        if usd is not None:
+            cost_known += 1
+            total_spend += usd
         qpd = scores['Q'] / usd if scores['Q'] is not None and usd is not None and usd > 0 else None
         qa = _qa_pass(episodes_root, eid)
         qa_known += qa is not None
@@ -102,7 +110,7 @@ def render_table(reports, *, episodes_root: Path, unreadable_lines=0, input_unav
     qa_rate = f'{100 * qa_passed / qa_known:.1f}%' if qa_known else 'N/A'
     output.append(f'Actual QA pass rate: {qa_rate} ({qa_passed}/{qa_known}); '
                   f'known: {qa_known}; unavailable: {count - qa_known} (excluded from denominator)')
-    total = _number(known_spend, digits=6) if count and cost_known == count else 'N/A'
+    total = _number(total_spend, digits=6) if count and cost_known == count else 'N/A'
     output.append(f'Cost USD total: {total}; known_usd* subtotal: {_number(known_spend, digits=6)}; '
                   f'cost known: {cost_known}; cost missing: {count - cost_known}; '
                   f'known_usd missing: {known_missing}')
