@@ -104,7 +104,40 @@ def test_complete_mocked_pipeline_speaks_retained_subjects(tmp_path,monkeypatch)
     assert report['passed'] and len(calls)==1 and len(provider.calls)==1
     spec=json.loads((tmp_path/'episodes'/'grounded'/'narrative-spec.json').read_text())
     assert spec['voiceover']['text']==calls[0]['text']==voiceover.intro_text(spec)
+    assert any(noun in calls[0]['text'].lower() for noun in ('night parade','market','street performers'))
     assert spec['voiceover']['grounding_version']=='subjects-v1' and len(calls[0]['text'])<90
     assert any(s.get('semantic_evidence') for s in spec['segments'])
     evaluation=json.loads((tmp_path/'episodes'/'grounded'/'eval-report.json').read_text())
     assert next(c for c in evaluation['gates']['checks'] if c['name']=='voiceover_integrity')['status']=='pass'
+
+
+def test_closed_subject_aliases_do_not_trigger_whole_plan_fallback(tmp_path):
+    class Aliases(SubjectProvider):
+        def complete_json(self,**kwargs):
+            response=super().complete_json(**kwargs)
+            response.data['segments'][0]['subject_tags']=['Night parade','people']
+            return response
+    a=framed(tmp_path)
+    spec=planner.plan_teaser(context(tmp_path,a),a,provider=Aliases(None))
+    assert spec['planner_mode']=='llm'
+    assert 'night parade' in voiceover.intro_text(spec).lower()
+    validate_narrative(spec,a);semantics.validate_evidence(spec,a,tmp_path)
+
+
+def test_shortlist_prefers_available_in_window_subject_evidence(tmp_path):
+    a=framed(tmp_path)
+    # High-ranked unframed windows must not evict the only grounded evidence.
+    for c in a['candidates'][3:]:
+        c.update(frame_path=None,frame_in_window=False,frame_time_ms=None)
+        c['quality']['visual_score']=100
+    provider=SubjectProvider(None)
+    spec=planner.plan_teaser(context(tmp_path,a),a,provider=provider)
+    assert spec['planner_mode']=='llm'
+    assert semantics.subjects_in(spec)[0]
+    assert voiceover.intro_text(spec)!= "A few selected moments.\nLet's take a look."
+
+
+def test_relative_pronoun_is_not_requested_trip_content():
+    from pipelines.ffmpeg.goal_parser import parse_goal
+    intent=parse_goal('Create a teaser from this raw family-trip footage that highlights the important moments')
+    assert not intent.requested_terms

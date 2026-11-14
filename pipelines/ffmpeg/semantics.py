@@ -14,6 +14,27 @@ SUBJECTS={
 LABELS=['people','action','scenic_wide','interior','screen']
 
 
+def normalize_tags(data):
+    """Canonicalize only closed descriptive aliases; never infer from prose/Goal."""
+    from copy import deepcopy
+    result=deepcopy(data)
+    for segment in result.get('segments',[]):
+        tags=segment.get('subject_tags')
+        if not isinstance(tags,list) or not all(isinstance(t,str) for t in tags):continue
+        labels=list(segment.get('semantic_labels',[]))
+        canonical=[]
+        for tag in tags:
+            value=tag.strip().lower().replace(' ','_').replace('-','_')
+            if value in LABELS:
+                labels.append(value)
+            else:
+                # Unknown tags remain invalid, including named places.
+                canonical.append(value)
+        segment['subject_tags']=list(dict.fromkeys(canonical))
+        if labels:segment['semantic_labels']=list(dict.fromkeys(labels))
+    return result
+
+
 def attach(spec,data,rows):
     """Only retained final selections inherit labels from an actually supplied tile."""
     for segment in spec['segments']:

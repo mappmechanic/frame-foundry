@@ -236,7 +236,12 @@ def _complete_visual_duration(analysis, intent, response, candidates):
 
 def _compact_evidence(ctx, analysis, directory, candidates=None):
     if candidates is None:candidates=_local_candidates(ctx, analysis)
-    top=rank_candidates(candidates,ctx.goal,top_n=8)
+    # Prefer inspectable windows: empty tiles cannot ground descriptive narration.
+    framed=[c for c in candidates if c.get('frame_in_window') and c.get('frame_path')
+            and type(c.get('frame_time_ms')) is int and c['start_ms']<=c['frame_time_ms']<c['end_ms']]
+    top=rank_candidates(framed,ctx.goal,top_n=8)
+    selected={c['candidate_id'] for c in top}
+    top+=rank_candidates([c for c in candidates if c['candidate_id'] not in selected],ctx.goal,top_n=8-len(top))
     rows=[];tiles=[]
     for c in top:
         row={k:c[k] for k in ('candidate_id','source_id','start_ms','end_ms','transcript_snippet','quality','quality_method') if k in c}
@@ -422,7 +427,7 @@ def plan_teaser(ctx: EpisodeContext, analysis: dict, *, provider=_DEFAULT_PROVID
                 if retry_fix is not None:payload['fix_instruction']=str(retry_fix)[:160]
                 # Cache only validated source-backed decisions, never media or credentials.
                 from .evaluator import footage_fingerprint
-                identity=dict(footage=footage_fingerprint(analysis['sources']),goal=ctx.goal,provider=getattr(provider,'provider',None),model=getattr(provider,'model',None),protocol='compact-planner-7-grounded-subjects-crop-closing-v2',transcription_status=analysis.get('transcription_status'),candidates=rows,fix=retry_fix)
+                identity=dict(footage=footage_fingerprint(analysis['sources']),goal=ctx.goal,provider=getattr(provider,'provider',None),model=getattr(provider,'model',None),protocol='compact-planner-8-grounded-subject-aliases-framed-closing-v2',transcription_status=analysis.get('transcription_status'),candidates=rows,fix=retry_fix)
                 key=hashlib.sha256(json.dumps(identity,sort_keys=True).encode()).hexdigest()
                 cache=Path(os.environ.get('FRAMEFOUNDRY_CACHE_DIR',str(Path(__file__).resolve().parents[2]/'.inference-cache')))/'planner'/f'{key}.json'
                 data=None
@@ -439,7 +444,7 @@ def plan_teaser(ctx: EpisodeContext, analysis: dict, *, provider=_DEFAULT_PROVID
                 if not hit:
                     response = provider.complete_json(system=_SYSTEM+' Select only intervals wholly inside the supplied candidates. Tile labels map to candidate ids. Keep each reason <=160 characters.',prompt=json.dumps(payload),images=images,
                         role='planner',episode_dir=ctx.episode_dir,max_output_tokens=1024)
-                    data=response.data
+                    data=semantics.normalize_tags(response.data)
                     _check_candidate_mapping(data,rows)
                 # Validate the original decision before completing it, so invalid
                 # overlap/bounds cannot be hidden by the duration helper.

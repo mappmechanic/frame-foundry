@@ -20,7 +20,7 @@ class GoalIntent:
 _NUMBER = r'(?:\d+(?:\.\d+)?|\.\d+)'
 _UNIT = r'(?:seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h)\b'
 _DURATION = re.compile(rf'(?<![\w.:])({_NUMBER})\s*({_UNIT})?\s*(?:[-–—]|\bto\b)\s*({_NUMBER})\s*({_UNIT})|(?<![\w.:])({_NUMBER})\s*-?\s*({_UNIT})', re.I)
-_STOP = set('a an the my our your their we us i me of for from in on at to and or with without make create produce edit use using all raw footage video videos clip clips reel reels teaser trip family highlights highlight vacation holiday please show include featuring focus moments moment important best into output duration second seconds sec secs minute minutes min mins short quick long longer extended vertical portrait landscape horizontal aspect ratio format then but instead chronological montage fun cinematic'.split())
+_STOP = set('that which who whom whose this these those is are was were be been being it its a an the my our your their we us i me of for from in on at to and or with without make create produce edit use using all raw footage video videos clip clips reel reels teaser trip family highlights highlight vacation holiday please show include featuring focus moments moment important best into output duration second seconds sec secs minute minutes min mins short quick long longer extended vertical portrait landscape horizontal aspect ratio format then but instead chronological montage fun cinematic'.split())
 
 
 def _constraint(message):
