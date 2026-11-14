@@ -152,10 +152,12 @@ def test_bounded_loudnorm_retry_uses_original_and_preserves_headroom(tmp_path, m
     monkeypatch.setattr(render, '_run', run)
     render._normalize(tmp_path / 'joined.mkv', tmp_path / 'candidate.mp4')
     encodes = [c for c in calls if c[-1] == str(tmp_path / 'candidate.mp4')]
-    assert len(encodes) == 2
+    assert len(encodes) == 3
     assert all(c[c.index('-i')+1] == str(tmp_path / 'joined.mkv') for c in encodes)
     assert all('TP=-2' in c[c.index('-af')+1] for c in encodes)
     assert 'I=-13:' in encodes[-1][encodes[-1].index('-af')+1]
+    assert 'alimiter=' in encodes[-1][encodes[-1].index('-af')+1]
+    assert 'level=false:latency=true' in encodes[-1][encodes[-1].index('-af')+1]
 
 
 @pytest.mark.parametrize('audio', ['sine=frequency=440:sample_rate=48000:duration=6',
@@ -197,3 +199,35 @@ def test_real_sparse_high_crest_audio_keeps_peak_gate_and_rejects_lufs_undershoo
     if not acceptable_lufs:
         assert 'observed' in gate(report, 'loudness')['reason']
     assert (tmp_path / 'contact-sheet.jpg').is_file()
+
+
+def test_encoded_lufs_undershoot_gets_one_bounded_post_normalization_limiter(tmp_path,monkeypatch):
+    calls=[];measurements=iter([-16.7,-15.59])
+    original=tmp_path/'joined.mov';candidate=tmp_path/'candidate.mp4'
+    stats=dict(input_i='-28',input_tp='-9',input_lra='4',input_thresh='-35',target_offset='-.02')
+    def run(args):
+        calls.append(args)
+        if args[args.index('-i')+1]==str(candidate):
+            return SimpleNamespace(stderr=json.dumps(dict(input_i=str(next(measurements)),input_tp='-1.6')))
+        return SimpleNamespace(stderr=json.dumps(stats))
+    monkeypatch.setattr(render,'_run',run)
+    render._normalize(original,candidate)
+    encodes=[c for c in calls if c[-1]==str(candidate)]
+    assert len(encodes)==3 and len(calls)==7
+    assert all(c[c.index('-i')+1]==str(original) for c in encodes)
+    correction=encodes[-1][encodes[-1].index('-af')+1]
+    assert 'volume=1.590000dB' in correction
+    assert 'aresample=192000' in correction and correction.endswith('aresample=48000')
+    assert 'alimiter=limit=0.7943282347' in correction
+
+
+def test_valid_encoded_audio_needs_no_gain_or_limiter_retry(tmp_path,monkeypatch):
+    calls=[];candidate=tmp_path/'candidate.mp4'
+    stats=dict(input_i='-20',input_tp='-3',input_lra='2',input_thresh='-30',target_offset='0')
+    def run(args):
+        calls.append(args)
+        return SimpleNamespace(stderr=json.dumps(dict(input_i='-14.49',input_tp='-1.6') if args[args.index('-i')+1]==str(candidate) else stats))
+    monkeypatch.setattr(render,'_run',run)
+    render._normalize(tmp_path/'joined.mov',candidate)
+    assert len([c for c in calls if c[-1]==str(candidate)])==1
+    assert not any('alimiter=' in c[c.index('-af')+1] for c in calls)

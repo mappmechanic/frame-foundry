@@ -110,21 +110,33 @@ def _normalize(joined, candidate, *, target_i=-14):
                       '-c:v', 'copy', '-af', filter_, '-c:a', 'aac', '-b:a', '192k',
                       '-ar', '48000', '-ac', '2', '-threads', '2',
                       '-movflags', '+faststart', str(candidate)])
-    # Measure the encoded MP4, not normalization metadata. High-crest-factor
-    # source audio plus AAC may undershoot LUFS despite valid two-pass inputs.
-    # One bounded re-normalization from the lossless joined audio uses the upper
-    # inclusive target (-13) while retaining -2 dBTP encoding headroom. Delivery
-    # still requires the independent [-15,-13]/<=-1 gates; never waive them.
+    # Always measure encoded AAC, not loudnorm's predicted output. Two-pass
+    # dynamic normalization can undershoot on high-crest phone audio. First try
+    # the existing bounded -13 LUFS normalization; if it still misses, perform
+    # one measured gain correction with an oversampled post-normalization peak
+    # limiter. Re-encode from lossless joined audio, never compound AAC losses.
+    measured = _run(_ffmpeg() + ['-i',str(candidate),'-vn','-af',
+        'loudnorm=I=-14:TP=-1:LRA=11:print_format=json','-f','null','-']).stderr
+    try:
+        encoded=json.loads(measured[measured.rfind('{'):measured.rfind('}')+1])
+        i,p=float(encoded['input_i']),float(encoded['input_tp'])
+    except (ValueError,KeyError):
+        return  # independent validator will reject missing evidence
+    if not (math.isfinite(i) and math.isfinite(p)) or (-15<=i<=-13 and p<=-1):
+        return
     if target_i == -14:
-        measured = _run(_ffmpeg() + ['-i',str(candidate),'-vn','-af',
-            'loudnorm=I=-14:TP=-1:LRA=11:print_format=json','-f','null','-']).stderr
-        try:
-            encoded=json.loads(measured[measured.rfind('{'):measured.rfind('}')+1])
-            i,p=float(encoded['input_i']),float(encoded['input_tp'])
-        except (ValueError,KeyError):
-            return  # independent validator will reject missing evidence
-        if math.isfinite(i) and math.isfinite(p) and (not -15<=i<=-13 or p>-1):
-            _normalize(joined,candidate,target_i=-13)
+        _normalize(joined,candidate,target_i=-13)
+        return
+    gain=max(-12.0,min(12.0,-14.0-i))
+    limited=(filter_+f',aresample=192000,volume={gain:.6f}dB,'
+             'alimiter=limit=0.7943282347:attack=5:release=50:level=false:latency=true,'
+             'aresample=48000')  # -2 dBTP before AAC, 4x sample-rate peak limiting.
+    _run(_ffmpeg() + ['-i',str(joined),'-map','0:v:0','-map','0:a:0',
+                      '-c:v','copy','-af',limited,'-c:a','aac','-b:a','192k',
+                      '-ar','48000','-ac','2','-threads','2',
+                      '-movflags','+faststart',str(candidate)])
+    # No further attempts here. Independent LUFS/true-peak QA decides delivery;
+    # truly sparse/silent/incompatible content is retained only as diagnostic.
 
 
 def render_timeline(timeline, candidate_path, *, episode_dir):
