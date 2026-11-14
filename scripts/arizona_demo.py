@@ -5,11 +5,14 @@ with an OpenAI word-timestamp fallback when OPENAI_API_KEY is configured.
 --visual-only remains explicit no-ASR diagnostic mode; it never passes word QA.
 """
 import argparse
+from decimal import Decimal
 import os
 from pathlib import Path
 import subprocess
 import sys
 import zipfile
+
+ARIZONA_BUDGET_USD = Decimal('0.10')
 
 GOAL = 'Create a teaser from this raw family-trip footage that highlights the important moments of the trip'
 
@@ -33,6 +36,17 @@ def fetch(root):
     return clips
 
 
+def child_environment():
+    """One shared ASR/Planner/judge cap, without mutating process configuration."""
+    from pipelines.ffmpeg.llm_provider import BUDGET_ENV, episode_budget_usd, episode_token_budget
+    # Validate before clamping: malformed configuration is terminal, not a default.
+    configured = episode_budget_usd()
+    episode_token_budget()
+    env = os.environ.copy()
+    env[BUDGET_ENV] = str(min(configured, ARIZONA_BUDGET_USD))
+    return env
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--data-dir', type=Path, default=Path(os.environ.get('FRAMEFOUNDRY_SAMPLE_DIR', '~/.cache/framefoundry/arizona')))
@@ -46,6 +60,13 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if not (3, 10) <= sys.version_info[:2] < (3, 14):
         parser.error("FrameFoundry requires Python >=3.10,<3.14 with OTIO 0.18.1; recreate .venv with uv venv -p 3.13 --clear")
+    env = None
+    if not args.fetch_only:
+        from pipelines.ffmpeg.llm_provider import ProviderError
+        try:
+            env = child_environment()
+        except ProviderError as error:
+            parser.error(str(error))
     footage = fetch(args.data_dir)
     if args.fetch_only:
         print(footage)
@@ -56,7 +77,7 @@ def main(argv=None):
     if args.visual_only: command += ['--visual-only']
     if args.evals_root: command += ['--evals-root',str(args.evals_root)]
     if args.no_planner_retry: command += ['--no-planner-retry']
-    return subprocess.run(command, check=False).returncode
+    return subprocess.run(command, check=False, env=env).returncode
 
 
 if __name__ == '__main__':

@@ -24,6 +24,20 @@ def _retain_diagnostic(directory, result, report):
     report.update(output_path=None, diagnostic_path='diagnostic.mp4', timeline_path='timeline.otio')
 
 
+def _judge_repair_fix(evaluation):
+    """A scored weak edit can pass the rubric and still need one concrete repair."""
+    judge = evaluation['judge']
+    fix = judge.get('fix_instruction')
+    if judge.get('status') != 'scored' or not isinstance(fix, str) or not fix.strip():
+        return None
+    j = evaluation['scores'].get('J')
+    opening = (judge.get('scores') or {}).get('opening')
+    weak = (judge.get('verdict') == 'fail'
+            or (isinstance(j, (int, float)) and j <= 0.5)
+            or (isinstance(opening, (int, float)) and opening <= 2))
+    return fix.strip()[:160] if weak else None
+
+
 def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixture=None,provider='env',visual_only=False,evals_root=None,eval_labels=None,planner_retry=True,asr_provider='auto'):
     if visual_only and transcript_fixture is not None:raise StageError('INPUT_CONFLICT','refinery','Choose visual-only or a transcript fixture, not both')
     if not goal.strip():raise StageError('GOAL_EMPTY','refinery','Goal must not be blank')
@@ -95,8 +109,16 @@ def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixt
                         if first_eval_passed is None:first_eval_passed=evaluation['gates']['passed']
                         failed_gates={c['name'] for c in evaluation['gates']['checks'] if c['status']=='fail'}
                         repairable_eval=bool(failed_gates & {'duration_target','word_cut_integrity','black_frames','frozen_frames','repeated_shots'})
-                        judge_fix=evaluation['judge'].get('fix_instruction') if evaluation['judge'].get('verdict')=='fail' else None
+                        judge_fix=_judge_repair_fix(evaluation)
                         if planner_retry and not planning_retried and active_provider is not None and index<3 and (repairable_eval or judge_fix):
+                            # Preserve the exact judged attempt in existing strict string fields.
+                            # The next render is evaluated afresh; its J/Q must never inherit these.
+                            if evaluation['judge']['status']=='scored':
+                                attempts[-1]['changes'].append(json.dumps(dict(
+                                    kind='judged_attempt', attempt=index,
+                                    render_hash=evaluation['render_hash'],
+                                    scores=evaluation['scores'], judge=evaluation['judge']),
+                                    sort_keys=True, allow_nan=False))
                             planning_retried=True
                             fix=judge_fix or 'Repair failed deterministic gates: '+', '.join(sorted(failed_gates))
                             spec=plan_teaser(ctx,analysis,provider=active_provider,retry_fix=fix[:160])
