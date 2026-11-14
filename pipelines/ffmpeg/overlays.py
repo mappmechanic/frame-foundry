@@ -10,7 +10,7 @@ STYLE=Path(__file__).resolve().parents[2]/'contracts/overlay-style.json'
 CUES={'halloween':{'halloween','costume','costumes','parade','shop','shops','candy','uptown','trick'},
       'resort':{'pool','resort','hotel','hilton','bell rock','red rocks'}}
 VISUAL=('costumes','parade','shops','pool','resort','red_rocks')
-CHECKS=('overlay_safe_area','overlay_duration','overlay_text_limits','overlay_cut_clearance','overlay_render_binding')
+CHECKS=('overlay_safe_area','overlay_duration','overlay_text_limits','overlay_cut_clearance','overlay_render_binding','overlay_legibility')
 
 def digest(value):return hashlib.sha256(json.dumps(value,sort_keys=True,allow_nan=False).encode()).hexdigest()
 def filehash(path):return hashlib.sha256(Path(path).read_bytes()).hexdigest()
@@ -49,7 +49,7 @@ def attach(ctx,spec,data=None,rows=()):
                 proofs.append(dict(section=i,source_id=s['source_id'],start_ms=s['raw_start_ms'],end_ms=s['raw_end_ms'],
                     cue=cue,frame_time_ms=t,frame_path=row['frame_path'],frame_sha256=row['frame_sha256']))
                 break
-    spec['overlays']=dict(version='goal-overlays-1',title=title,sections=sections,proofs=proofs,
+    spec['overlays']=dict(version='goal-overlays-2',title=title,sections=sections,proofs=proofs,
                          cards=[],limitations=[],render_sha256=None,plan_sha256=None,font_sha256=None,style_sha256=None)
     return spec
 
@@ -61,26 +61,38 @@ def font_path():
     raise StageError('OVERLAY_FONT','assembler','No bold sans font; set FRAMEFOUNDRY_OVERLAY_FONT')
 
 def layout(text,width,height,position='top'):
-    lines=textwrap.wrap(clean(text),width=42,break_long_words=True,break_on_hyphens=False) or ['']
-    if len(lines)>2:lines=lines[:2];lines[-1]=lines[-1][:41]+'…'
-    text='\n'.join(lines);size=max(24,round(height*.034));path=font_path()
-    while size>=18:
-        font=ImageFont.truetype(str(path),size)
-        missing=bytes(font.getmask('\uffff'))
-        if any(not c.isspace() and bytes(font.getmask(c))==missing for c in text):
-            raise StageError('OVERLAY_GLYPH','assembler','Configured font cannot render the overlay text')
-        tw=math.ceil(max(font.getlength(line) for line in lines))+12
-        th=math.ceil(size*1.35*len(lines))+12
-        if tw<=width*.88:break
-        size-=1
-    x=(width-tw)//2;y=round(height*.18) if position=='top' else round(height*.75)-th-8
-    return dict(text=text,x=x,y=y,width=tw,height=th,fontsize=size,position=position)
+    # Never shrink cap height to fit width: use a bold condensed raster instead.
+    text=clean(text);text=text if len(text)<=42 else text[:41]+'…';path=font_path();size=max(24,round(height*.06))
+    while ImageFont.truetype(str(path),size).getbbox('H')[3]-ImageFont.truetype(str(path),size).getbbox('H')[1]<math.ceil(height*.06):size+=1
+    font=ImageFont.truetype(str(path),size)
+    words=text.split();options=[]
+    if len(text)<=42:options.append([text])
+    for i in range(1,len(words)):
+        lines=[' '.join(words[:i]),' '.join(words[i:])]
+        if all(len(line)<=42 for line in lines):options.append(lines)
+    if not options:
+        text=text[:82]+'…';options=[[text[:41],text[41:83]]]
+    fitting=[lines for lines in options if sum(font.getbbox(line)[3]-font.getbbox(line)[1] for line in lines)+20*(len(lines)-1)+64+8<=math.floor(height/3)-math.ceil(height*.12)]
+    lines=min(fitting or options,key=lambda lines:max(font.getlength(line) for line in lines))
+    missing=bytes(font.getmask('\uffff'))
+    if any(not c.isspace() and bytes(font.getmask(c))==missing for c in '\n'.join(lines)):
+        raise StageError('OVERLAY_GLYPH','assembler','Configured font cannot render the overlay text')
+    natural=math.ceil(max(font.getlength(line) for line in lines))
+    padding=32;tw=min(natural,math.floor(width*.88)-2*padding)
+    if tw/natural<.4:
+        if len(text)<4:raise StageError('OVERLAY_FIT','assembler','Text cannot fit a legible card')
+        return layout(text[:-2]+'…',width,height)
+    heights=[font.getbbox(line)[3]-font.getbbox(line)[1] for line in lines]
+    th=sum(heights)+20*(len(lines)-1)+2*padding
+    if th+8>math.floor(height/3)-math.ceil(height*.12):raise StageError('OVERLAY_FIT','assembler','Large text does not fit the upper-third safe area')
+    return dict(text='\n'.join(lines),x=(width-tw-2*padding)//2,y=math.ceil(height*.12),
+        width=tw+2*padding,height=th,fontsize=size,position='top',
+        cap_height=font.getbbox('H')[3]-font.getbbox('H')[1],pill_opacity=.6,padding=padding)
 
 def intersects(a,b):return a[0]<b[0]+b[2] and b[0]<a[0]+a[2] and a[1]<b[1]+b[3] and b[1]<a[1]+a[3]
 def choose_position(text,w,h,boxes):
-    top=layout(text,w,h,'top');low=layout(text,w,h,'lower')
-    count=lambda c:sum(intersects([c['x'],c['y'],c['width'],c['height']+8],b) for b in boxes)
-    return low if count(low)<count(top) else top
+    # Current operator requirement fixes placement to the safe upper third.
+    return layout(text,w,h,'top')
 
 def face_boxes(source,source_time,w,h):
     """Same local Haar detector, one crop-matched frame; not full face tracking."""
@@ -122,26 +134,42 @@ def compile_cards(spec,analysis,timeline,root):
     clips=list(timeline.tracks[0]);w,h=(1080,1920) if spec['aspect_ratio']=='9:16' else (1920,1080)
     starts=[];cursor=0
     for c in clips:starts.append((cursor,output_frames(c.source_range.duration.to_seconds())));cursor+=starts[-1][1]
-    occupied={}
-    def add(kind,text,index,hold,proof):
-        start,length=starts[index];first=max(start+(1 if index else 0),occupied.get(index,start))
-        end=min(start+length-(1 if index<len(clips)-1 else 0),first+round((hold+.35)*30))
-        if end-first<47:return False  # ceil((1.2+.2+.15)*30)
-        source=next(s for s in spec['sources'] if s['source_id']==clips[index].metadata['source_id'])
-        boxes=face_boxes(source['path'],round(clips[index].source_range.start_time.to_seconds()*1000+(first-start)*1000/30),w,h)
-        card=choose_position(text,w,h,boxes or [])
-        card.update(kind=kind,shot_id=f'shot-{index+1:02d}',start_frame=first,end_frame=end,evidence=proof)
-        plan['cards'].append(card);occupied[index]=end+1
-        if boxes is None:plan['limitations'].append('Face geometry unavailable; conservative top placement, no verified face avoidance')
-        else:plan['limitations'].append('Face placement uses one crop-matched CPU sample, not full interval tracking')
+    cuts=[start for start,length in starts[1:]]
+    occupied=[]
+    def clear_frames(first,end):
+        return sorted({frame for cut in cuts for frame in (cut-1,cut,cut+1) if first<=frame<end})
+    def add(kind,text,index,proof,section=None):
+        start,length=starts[index];first=start+(1 if index else 0)
+        end_limit=cursor
+        if section is not None:
+            # Labels can bridge only a contiguous run of independently grounded clips.
+            end_limit=start+length
+            for following in range(index+1,len(clips)):
+                if not matches(spec,analysis,clips[following],section,root):break
+                end_limit=starts[following][0]+starts[following][1]
+        for lo,hi in occupied:
+            if first<hi and lo<end_limit:first=max(first,hi+1)
+        if first>=end_limit:return False
+        target=105 if kind=='title' else 90  # <=3.5s title; >=2.5s stationary label.
+        end=min(end_limit,first+target)
+        while end<end_limit and (end-first-len(clear_frames(first,end)))/30-.5<2.5:
+            if kind=='title' and end-first>=105:break
+            end+=1
+        hidden=clear_frames(first,end)
+        if (end-first-len(hidden))/30-.5<2.5:return False
+        card=layout(text,w,h)
+        if clean(card['text'])!=clean(text):plan['limitations'].append('Overlay text shortened to keep the required large two-line cap height')
+        card.update(kind=kind,shot_id=f'shot-{index+1:02d}',start_frame=first,end_frame=end,evidence=proof,cut_frames=hidden)
+        plan['cards'].append(card);occupied.append((first,end))
+        plan['limitations'].append('Large upper-third scrim placement; cut frames hidden; no verified face tracking')
         return True
-    if not add('title',plan['title'],0,1.5,dict(kind='operator_goal',source_id='',start_ms=0,end_ms=0,cue='')):
-        plan['limitations'].append('Title omitted: first shot lacks a cut-safe readable interval')
+    if not add('title',plan['title'],0,dict(kind='operator_goal',source_id='',start_ms=0,end_ms=0,cue='')):
+        raise StageError('OVERLAY_DURATION','assembler','Title lacks a 2.5s readable interval within 3.5s')
     for section,name in enumerate(plan['sections']):
         found=False
         for i,clip in enumerate(clips):
             proof=matches(spec,analysis,clip,section,root)
-            if proof and add('section',f'{section+1}. {name}',i,1.8,proof):found=True;break
+            if proof and add('section',f'{section+1}. {name}',i,proof,section):found=True;break
         if not found:plan['limitations'].append(f'Requested section {section+1} omitted: no grounded cut-safe readable interval')
     for note in plan['limitations']:
         if 'omitted:' in note and note not in spec['coverage']['limitations']:
@@ -162,15 +190,21 @@ def preflight():
 
 
 def card_png(card,path):
-    """Rasterize literal text and shadow inside the verified card rectangle."""
+    """Large bold two-line raster, 60% black pill and literal UTF-8 glyphs."""
     image=Image.new('RGBA',(card['width'],card['height']),(0,0,0,0))
     draw=ImageDraw.Draw(image);font=ImageFont.truetype(str(font_path()),card['fontsize'])
-    for i,line in enumerate(card['text'].splitlines()):
-        y=6+round(i*card['fontsize']*1.35)
-        draw.text((8,y+2),line,font=font,fill=(0,0,0,166),anchor='lt')
-        draw.text((6,y),line,font=font,fill=(255,255,255,255),anchor='lt')
+    draw.rounded_rectangle((0,0,card['width']-1,card['height']-1),radius=32,fill=(0,0,0,round(255*card['pill_opacity'])))
+    lines=card['text'].splitlines();heights=[font.getbbox(line)[3]-font.getbbox(line)[1] for line in lines]
+    natural=math.ceil(max(font.getlength(line) for line in lines));target=card['width']-2*card['padding']
+    tile=Image.new('RGBA',(natural+8,sum(heights)+20*(len(lines)-1)+8),(0,0,0,0));glyphs=ImageDraw.Draw(tile);y=0
+    for line,h in zip(lines,heights):
+        x=(natural-font.getlength(line))/2
+        glyphs.text((x+2,y+3),line,font=font,fill=(0,0,0,166),anchor='lt')
+        glyphs.text((x,y),line,font=font,fill=(255,255,255,255),anchor='lt');y+=h+20
+    # Horizontal condensation preserves measured cap height and bold vertical strokes.
+    tile=tile.resize((target,tile.height),Image.Resampling.LANCZOS)
+    image.alpha_composite(tile,(card['padding'],card['padding']))
     image.save(path,format='PNG')
-
 
 def burn(video,output,plan):
     from .render import _run,_ffmpeg
@@ -189,9 +223,10 @@ def burn(video,output,plan):
             # The inclusive between() upper bound is the LAST visible frame,
             # never the exclusive end/cut frame. Tolerance is far below a frame.
             a=s-1e-6;b=(c['end_frame']-1)/30+1e-6
-            filters.append(f'[{i+1}:v:0]format=rgba,setpts=PTS-STARTPTS,fade=t=in:st={s}:d=0.2:alpha=1,fade=t=out:st={e-.15}:d=0.15:alpha=1[card{i}]')
-            y=f'{c["y"]}+8*(1-min(1,max(0,(t-{s})/.2)))'
-            filters.append(f"[{last}][card{i}]overlay=x={c['x']}:y='{y}':enable='between(t,{a},{b})':shortest=1:eof_action=pass[v{i}]")
+            filters.append(f'[{i+1}:v:0]format=rgba,setpts=PTS-STARTPTS,fade=t=in:st={s}:d=0.25:alpha=1,fade=t=out:st={e-.25}:d=0.25:alpha=1[card{i}]')
+            y=f'{c["y"]}+8*(1-min(1,max(0,(t-{s})/.25)))'
+            enabled=f'between(t,{a},{b})'+''.join(f'*not(between(t,{(n-.25)/30},{(n+.25)/30}))' for n in c.get('cut_frames',[]))
+            filters.append(f"[{last}][card{i}]overlay=x={c['x']}:y='{y}':enable='{enabled}':shortest=1:eof_action=pass[v{i}]")
             last=f'v{i}'
         _run(args+['-filter_complex',';'.join(filters),'-map',f'[{last}]','-map','0:a:0',
             '-c:v','libx264','-preset','fast','-crf','18','-pix_fmt','yuv420p','-threads','2',
@@ -202,14 +237,17 @@ def verify(spec,video,cuts,duration_ms):
     plan=spec.get('overlays')
     if not plan:return []
     w,h=(1080,1920) if spec['aspect_ratio']=='9:16' else (1920,1080)
-    cards=plan['cards'];results={name:True for name in CHECKS}
+    cards=plan['cards'];results={name:True for name in CHECKS};results['overlay_legibility']=bool(cards)
     for c in cards:
-        results['overlay_safe_area'] &= (0<=c['x'] and c['x']+c['width']<=w and c['y']>=math.ceil(h*.12) and c['y']+c['height']+8<=math.floor(h*.8))
-        results['overlay_duration'] &= (c['end_frame']-c['start_frame'])/30-.35>=1.2 and 0<=c['start_frame']<c['end_frame']<=round(duration_ms*30/1000)+1
+        results['overlay_safe_area'] &= (0<=c['x'] and c['x']+c['width']<=w and c['y']>=math.ceil(h*.12) and c['y']+c['height']+8<=math.floor(h/3))
+        results['overlay_duration'] &= (c['end_frame']-c['start_frame']-len(c.get('cut_frames',[])))/30-.5>=2.5 and 0<=c['start_frame']<c['end_frame']<=round(duration_ms*30/1000)+1
+        if c['kind']=='title':results['overlay_duration'] &= (c['end_frame']-c['start_frame'])/30<=3.5
         results['overlay_text_limits'] &= 1<=len(c['text'].splitlines())<=2 and all(len(x)<=42 for x in c['text'].splitlines())
-        results['overlay_cut_clearance'] &= all(not c['start_frame']/30*1000<=cut<c['end_frame']/30*1000 for cut in cuts)
+        results['overlay_cut_clearance'] &= all(not c['start_frame']/30*1000<=cut<c['end_frame']/30*1000 or round(cut*30/1000) in c.get('cut_frames',[]) for cut in cuts)
+        luminance=((1-c.get('pill_opacity',0)+.055)/1.055)**2.4
+        results['overlay_legibility'] &= c.get('cap_height',0)>=.05*h and .55<=c.get('pill_opacity',0)<=.65 and 1.05/(luminance+.05)>=4.5
         expected=layout(c['text'],w,h,c['position'])
-        results['overlay_render_binding'] &= all(c[k]==expected[k] for k in ('text','x','y','width','height','fontsize','position'))
+        results['overlay_render_binding'] &= all(c.get(k)==expected[k] for k in ('text','x','y','width','height','fontsize','position','cap_height','pill_opacity','padding'))
     results['overlay_render_binding'] &= (plan['render_sha256']==filehash(video) and plan['style_sha256']==filehash(STYLE)
         and plan['font_sha256']==filehash(font_path()) and plan['plan_sha256']==digest({k:v for k,v in plan.items() if k not in ('render_sha256','plan_sha256')}))
     return [dict(name=name,status='pass' if ok else 'fail',reason=None if ok else 'Overlay geometry, timing or render binding failed',required=True) for name,ok in results.items()]

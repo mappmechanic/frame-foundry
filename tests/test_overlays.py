@@ -20,8 +20,8 @@ def test_default_override_and_goal_list(tmp_path):
 
 def setup_plan(tmp_path,monkeypatch,words=True):
     spec,analysis=narrative(tmp_path)
-    spec['segments']=[selection('a',0,3000,'one'),selection('b',0,3000,'two')]
-    spec['target_duration_ms']=6000
+    spec['segments']=[selection('a',0,3000,'one'),selection('b',0,6000,'two')]
+    spec['target_duration_ms']=9000
     ctx=EpisodeContext('episode',tmp_path,'Things to do in Sedona with Kids',overlay_mode=True,
                        overlay_sections=['Halloween in Uptown Sedona','Hilton Sedona Resort at Bell Rock'])
     spec['goal']=analysis['goal']=ctx.goal
@@ -41,9 +41,9 @@ def test_grounded_fallback_omits_unsupported_section_and_fits_cuts(tmp_path,monk
     assert '2. Hilton' in cards[1]['text'] and cards[1]['evidence']['kind']=='retained_transcript'
     assert any('section 1 omitted' in x for x in spec['overlays']['limitations'])
     for c in cards:
-        assert c['y']>=1920*.12 and c['y']+c['height']+8<=1920*.8
-        assert (c['end_frame']-c['start_frame'])/30-.35>=1.2
-        assert not c['start_frame']<=90<c['end_frame']
+        assert c['y']>=1920*.12 and c['y']+c['height']+8<=1920/3
+        assert (c['end_frame']-c['start_frame']-len(c['cut_frames']))/30-.5>=2.5
+        assert not c['start_frame']<=90<c['end_frame'] or 90 in c['cut_frames']
 
 
 def test_never_maps_from_goal_or_filenames_alone(tmp_path,monkeypatch):
@@ -56,25 +56,25 @@ def test_wrap_and_face_placement():
     top=overlays.layout('1. '+('Long place name '*10),1080,1920)
     assert len(top['text'].splitlines())<=2 and all(len(s)<=42 for s in top['text'].splitlines())
     lower=overlays.choose_position('Sedona with Kids',1080,1920,[[0,300,1080,400]])
-    assert lower['position']=='lower'
+    assert lower['position']=='top'
     assert overlays.choose_position('Sedona',1080,1920,[])['position']=='top'
 
 
-def test_short_shot_omits_instead_of_spanning_cuts(tmp_path,monkeypatch):
+def test_title_bridges_short_shot_with_explicit_cut_clearance(tmp_path,monkeypatch):
     _,spec,analysis,_=setup_plan(tmp_path,monkeypatch)
     spec['segments'][0].update(raw_end_ms=500,render_end_ms=None,render_start_ms=None)
     spec['target_duration_ms']=5000
     timeline,amended=assembler.build_timeline(spec,analysis)
     spec=overlays.compile_cards(amended,analysis,timeline,tmp_path)
-    assert all(c['kind']!='title' for c in spec['overlays']['cards'])
+    assert spec['overlays']['cards'][0]['kind']=='title' and 15 in spec['overlays']['cards'][0]['cut_frames']
 
 
 @pytest.mark.parametrize('limited_filters',[False,True])
 def test_real_burn_and_receipt_detects_mutation(tmp_path,monkeypatch,limited_filters):
     _,spec,_,_=setup_plan(tmp_path,monkeypatch)
     source=tmp_path/'source.mp4';output=tmp_path/'finished.mp4'
-    subprocess.run(['ffmpeg','-v','error','-y','-f','lavfi','-i','color=c=blue:s=1080x1920:r=30:d=6',
-        '-f','lavfi','-i','sine=frequency=500:duration=6','-c:v','libx264','-preset','ultrafast','-pix_fmt','yuv420p','-c:a','aac','-shortest',str(source)],check=True,capture_output=True)
+    subprocess.run(['ffmpeg','-v','error','-y','-f','lavfi','-i','color=c=blue:s=1080x1920:r=30:d=9',
+        '-f','lavfi','-i','sine=frequency=500:duration=9','-c:v','libx264','-preset','ultrafast','-pix_fmt','yuv420p','-c:a','aac','-shortest',str(source)],check=True,capture_output=True)
     if limited_filters:
         import sys,shutil
         from pipelines.ffmpeg import render
@@ -88,7 +88,7 @@ def test_real_burn_and_receipt_detects_mutation(tmp_path,monkeypatch,limited_fil
         monkeypatch.setattr(render,'_ffmpeg',lambda:[str(wrapper)]+base[1:])
         assert overlays.preflight()=='png'
     overlays.burn(source,output,spec['overlays'])
-    assert all(c['status']=='pass' for c in overlays.verify(spec,output,[3000],6000))
+    assert all(c['status']=='pass' for c in overlays.verify(spec,output,[3000],9000))
     from PIL import Image
     image=tmp_path/'frame.png'
     subprocess.run(['ffmpeg','-v','error','-y','-ss','0.8','-i',str(output),'-frames:v','1',str(image)],check=True,capture_output=True)
@@ -100,8 +100,11 @@ def test_real_burn_and_receipt_detects_mutation(tmp_path,monkeypatch,limited_fil
     subprocess.run(['ffmpeg','-v','error','-y','-ss','3.0','-i',str(output),'-frames:v','1',str(image)],check=True,capture_output=True)
     cut=Image.open(image).convert('RGB').crop((0,230,1080,700))
     assert sum(b<100 for r,g,b in cut.getdata())==0
+    subprocess.run(['ffmpeg','-v','error','-y','-ss','5.0','-i',str(output),'-frames:v','1',str(image)],check=True,capture_output=True)
+    later=Image.open(image).convert('RGB').crop((0,230,1080,700))
+    assert sum(r>220 and g>220 and b>220 for r,g,b in later.getdata())>300
     spec['overlays']['cards'][0]['y']=0
-    checks={c['name']:c['status'] for c in overlays.verify(spec,output,[3000],6000)}
+    checks={c['name']:c['status'] for c in overlays.verify(spec,output,[3000],9000)}
     assert checks['overlay_safe_area']=='fail' and checks['overlay_render_binding']=='fail'
 
 
@@ -141,7 +144,7 @@ def test_png_is_literal_transparent_and_contains_shadow(tmp_path):
         pixels=list(image.getdata())
         assert any(a==0 for r,g,b,a in pixels)
         assert any((r,g,b,a)==(255,255,255,255) for r,g,b,a in pixels)
-        assert any((r,g,b,a)==(0,0,0,166) for r,g,b,a in pixels)
+        assert any(r==0 and g==0 and b==0 and a>=153 for r,g,b,a in pixels)
 
 
 def test_missing_compositing_filter_is_typed_before_render(monkeypatch):
@@ -175,3 +178,31 @@ def test_media_binary_overrides_and_path_fallback(monkeypatch):
     assert calls[0][0]=='/opt/homebrew/opt/ffmpeg-full/bin/ffprobe'
     monkeypatch.delenv('FRAMEFOUNDRY_FFMPEG');monkeypatch.delenv('FRAMEFOUNDRY_FFPROBE')
     assert media_binary('ffmpeg')=='ffmpeg' and media_binary('ffprobe')=='ffprobe'
+
+
+def test_cap_pill_upper_third_and_legibility_failures(tmp_path,monkeypatch):
+    _,spec,_,_=setup_plan(tmp_path,monkeypatch)
+    card=spec['overlays']['cards'][0]
+    assert card['cap_height']>=116 and card['pill_opacity']==.6 and card['padding']==32
+    assert card['y']>=1920*.12 and card['y']+card['height']+8<=1920/3
+    render=tmp_path/'render.mp4';render.write_bytes(b'test receipt')
+    plan=spec['overlays'];plan['render_sha256']=overlays.filehash(render)
+    for key,value in [('cap_height',40),('pill_opacity',.4)]:
+        altered=deepcopy(spec);altered['overlays']['cards'][0][key]=value
+        results={c['name']:c['status'] for c in overlays.verify(altered,render,[3000],9000)}
+        assert results['overlay_legibility']=='fail'
+    assert (card['end_frame']-card['start_frame'])/30<=3.5
+
+
+def test_section_label_never_bridges_ungrounded_clip(tmp_path,monkeypatch):
+    _,spec,analysis,_=setup_plan(tmp_path,monkeypatch)
+    spec['segments']=[selection('a',0,4000,'one'),selection('b',0,2000,'two'),selection('a',5000,9000,'three')]
+    spec['target_duration_ms']=10000
+    timeline,amended=assembler.build_timeline(spec,analysis)
+    compiled=overlays.compile_cards(amended,analysis,timeline,tmp_path)
+    assert [c['kind'] for c in compiled['overlays']['cards']]==['title']
+
+
+def test_large_landscape_title_uses_fitting_upper_third_layout():
+    card=overlays.layout('Things to do in Sedona with Kids',1920,1080)
+    assert card['cap_height']>=65 and card['y']+card['height']+8<=360
