@@ -133,3 +133,23 @@ def test_repair_reuses_episode_audio_if_global_cache_write_failed(tmp_path,audio
 def test_invalid_config_fails_closed(monkeypatch,name,value):
     monkeypatch.setenv('ELEVENLABS_API_KEY','fake');monkeypatch.setenv(name,value)
     with pytest.raises(StageError):vo.configuration()
+
+
+def test_independent_vo_failure_cannot_advertise_delivery(tmp_path,audio,monkeypatch):
+    from tests.fixtures.generate_footage import generate_footage
+    from pipelines.ffmpeg.cli import run_episode
+    from pipelines.ffmpeg import evaluator
+    footage=tmp_path/'footage';generate_footage(footage)
+    monkeypatch.setenv('ELEVENLABS_API_KEY','fake')
+    monkeypatch.setattr(account,'_transport',lambda *args:(200,audio))
+    original=evaluator.evaluate_episode
+    def tamper(root,**kwargs):
+        spec=read_json(root/'narrative-spec.json')
+        spec['voiceover']['sha256']='0'*64
+        (root/'narrative-spec.json').write_text(json.dumps(spec))
+        return original(root,**kwargs)
+    monkeypatch.setattr(evaluator,'evaluate_episode',tamper)
+    report=run_episode(footage,'10 second family-trip teaser',episodes_root=tmp_path/'episodes',episode_id='tampered',provider=None,transcript_fixture=footage/'transcript-fixture.json',voiceover=True)
+    assert not report['passed'] and report['output_path'] is None
+    assert report['error']['code']=='EVAL_VOICEOVER_FAILED'
+    assert (tmp_path/'episodes'/'tampered'/'diagnostic.mp4').is_file()

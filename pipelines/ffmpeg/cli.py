@@ -134,8 +134,8 @@ def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixt
                             attempts[-1]['changes'].extend(next_changes)
                             evaluation=None
                             continue
-                        if 'duration_target' in failed_gates:
-                            code='EVAL_DURATION_FAILED'
+                        if failed_gates & {'duration_target','voiceover_integrity'}:
+                            code='EVAL_VOICEOVER_FAILED' if 'voiceover_integrity' in failed_gates else 'EVAL_DURATION_FAILED'
                             report.update(passed=False,result='failed',output_path=None,error=StageError(code,'validator','Evaluation failed: '+', '.join(sorted(failed_gates))+'; clip retained only as diagnostic.mp4').as_dict())
                             # Keep measured render evidence and G=0/Q=0 in the final evaluation.
                         if evaluation['judge'].get('reason','') and evaluation['judge']['reason'].startswith('Judge blocked by budget:'):
