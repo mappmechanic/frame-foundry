@@ -425,6 +425,8 @@ def plan_teaser(ctx: EpisodeContext, analysis: dict, *, provider=_DEFAULT_PROVID
                     candidates=rows,response_schema=_RESPONSE_SCHEMA)
                 if memory and memory['lessons']:
                     payload['edit_memory']=memory_loop.prompt_data(memory['lessons'])
+                    memory['lessons_used']=[l['id'] for l in memory['lessons']]
+                    memory_loop.save_selection(ctx,memory)
                 if teaser_edit.enabled(analysis):payload['duration_evidence']=dict(teaser_edit.duration_evidence(analysis,candidates),shortlist_duration_ms=teaser_edit.duration_evidence(analysis,rows)['usable_short_windows_ms'])
                 from .overlays import active,requested
                 from .decisions import selection_hints
@@ -467,9 +469,6 @@ def plan_teaser(ctx: EpisodeContext, analysis: dict, *, provider=_DEFAULT_PROVID
                 completed = teaser_edit.complete(analysis,intent,data,candidates or []) if teaser_edit.enabled(analysis) else _complete_visual_duration(analysis, intent, data, candidates or [])
                 spec = _reconstruct(ctx, analysis, intent, completed, 'llm')
                 semantics.attach(spec,data,rows)
-                if memory and memory['lessons']:
-                    memory['lessons_used']=[l['id'] for l in memory['lessons']]
-                    memory_loop.save_selection(ctx,memory)
                 if not hit and identity['footage']:
                     atomic_write_json(cache,dict(key=key,data=data,historical_usage=getattr(response,'usage',{})))
                 if hit:spec['assumptions'].append('Validated Planner cache hit; historical inference not charged again')

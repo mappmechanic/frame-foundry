@@ -22,7 +22,7 @@ OP_TIMEOUT = 2.0
 LOCK_TIMEOUT = 0.25
 MAX_POLLS = 3
 _WORKERS = threading.BoundedSemaphore(4)
-_FIELDS = frozenset("episode_id goal footage_hash J Q cost cost_status rubric_scores decider outcome kind source_id start_ms end_ms opening_types evaluation_id method_version judge_model judge_provider changes deltas config_hash rationale_status rubric_evidence known_cost".split())
+_FIELDS = frozenset("episode_id goal footage_hash J Q cost cost_status rubric_scores decider outcome kind source_id start_ms end_ms opening_types evaluation_id method_version judge_model judge_provider changes deltas config_hash rationale_status rubric_evidence known_cost selection_plan_hash paired_episode_id paired_evaluation_id".split())
 _ID = re.compile(r"[0-9a-f]{64}\Z")
 _UNSAFE_KEY = re.compile(r"path|secret|token|password|credential|api.?key|transcript|media", re.I)
 _UNSAFE_TEXT = re.compile(r"(?:https?://|file://|(?:^|[\s(\"'])(?:/|~/|[A-Za-z]:\\)|[\w.-]+[/\\][\w.-]+|\b(?:sk-|gh[pousr]_|github_pat_|xox[baprs]-|AKIA[0-9A-Z]{16}|Bearer\s)|-----BEGIN .*PRIVATE KEY|\b(?:api[_ -]?key|password|secret|token)\s*[:=])", re.I)

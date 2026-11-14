@@ -145,15 +145,19 @@ def run_experiment(footage_dir, goal, *, experiment_id, iterations, episodes_roo
         path=curves/f'{experiment_id}.json'
         if path.exists():raise ValueError('Experiment already exists; use a fresh ID')
         scratch=curves/experiment_id
-        seed_hash=snapshot_seed(seed_root,scratch/'seed')
-        snapshot_seed(scratch/'seed',scratch/'memory_on')
-        curve['config_hash']=digest([curve['config_hash'],seed_hash])
         def save():
             from jsonschema import Draft202012Validator, FormatChecker
             curve['limitations']=list(dict.fromkeys(curve['limitations']))[:100]
             schema=read_json(Path(__file__).resolve().parents[1]/'contracts/learning-curve.schema.json')
             Draft202012Validator(schema,format_checker=FormatChecker()).validate(curve)
             atomic_write_json(path,curve);atomic_write_json(curves/'latest.json',curve)
+        try:
+            seed_hash=snapshot_seed(seed_root,scratch/'seed')
+            snapshot_seed(scratch/'seed',scratch/'memory_on')
+            curve['config_hash']=digest([curve['config_hash'],seed_hash])
+        except Exception:
+            curve['limitations'].append('Evaluation pending: local seed is malformed or unavailable; baseline not silently replaced and no Episode dispatched.')
+            save();return curve
         save()
         if not execute:
             curve['limitations'].append('Evaluation pending: explicit --execute was not supplied; no Episode dispatched.')

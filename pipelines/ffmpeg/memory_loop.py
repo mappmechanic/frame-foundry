@@ -40,6 +40,10 @@ def source_window(spec, shot_id, shots=None):
     if not ids or any(i not in segments or segments[i].get('source_id')!=sid for i in ids):return None
     a,b=shot.get('source_start_ms'),shot.get('source_end_ms')
     if not isinstance(sid,str) or type(a) is not int or type(b) is not int or not 0<=a<b:return None
+    mapped=[segments[i] for i in ids]
+    starts=[s.get('render_start_ms') if type(s.get('render_start_ms')) is int else s.get('raw_start_ms') for s in mapped]
+    ends=[s.get('render_end_ms') if type(s.get('render_end_ms')) is int else s.get('raw_end_ms') for s in mapped]
+    if not all(type(t) is int for t in starts+ends) or min(starts)!=a or max(ends)!=b:return None
     return dict(source_id=sid,start_ms=a,end_ms=b)
 
 def opening_types(spec):
@@ -49,7 +53,7 @@ def opening_types(spec):
     if not segment['raw_start_ms']<=t<segment['raw_end_ms']:return []
     return sorted((set(e.get('labels',[]))|set(e.get('subjects',[])))&TYPES)
 
-def build_lessons(report,qa,spec,previous=None,shots=None):
+def build_lessons(report,qa,spec,previous=None,shots=None,decider='llm'):
     """No freeform model interpretation, causal attribution, or extra inference."""
     fh=report.get('footage_hash');eid=report.get('episode_id');evaluation=report.get('evaluation_id')
     if not re.fullmatch(r'[a-f0-9]{64}',str(fh)) or not eid or not evaluation:return []
@@ -61,10 +65,10 @@ def build_lessons(report,qa,spec,previous=None,shots=None):
     text=f'opening={opening if opening is not None else "unknown"}; types={",".join(types) or "unknown"}; QA={"passed" if qa.get("passed") else "failed"}.'
     # Exact interval provenance is metadata, never instructions in lesson prose.
     meta=dict(episode_id=eid,goal=report.get('goal',''),footage_hash=fh,J=scores.get('J'),Q=scores.get('Q'),
-        cost=cost.get('usd'),cost_status=cost.get('status','unknown'),rubric_scores=rubric,decider='llm',
+        cost=cost.get('usd'),cost_status=cost.get('status','unknown'),rubric_scores=rubric,decider=decider,
         outcome='unknown',rationale_status='not_recorded',rubric_evidence=judge.get('evidence') if scored else None,known_cost=cost.get('known_usd'),kind='evaluation',opening_types=types,evaluation_id=evaluation,
         method_version=scores.get('method_version'),judge_model=judge.get('model'),judge_provider=judge.get('provider'),
-        config_hash=config_hash(spec,report))
+        config_hash=config_hash(spec,report),selection_plan_hash=digest([[s.get('source_id'),s.get('raw_start_ms'),s.get('raw_end_ms')] for s in spec.get('segments',[])]))
     if window:meta.update(window)
     lessons=[dict(id=digest([VERSION,evaluation,'evaluation']),text=text,infer=False,metadata=meta)]
     if previous:
@@ -73,10 +77,10 @@ def build_lessons(report,qa,spec,previous=None,shots=None):
             delta={name:meta[name]-pm[name] if finite(meta.get(name)) and finite(pm.get(name)) else None for name in ('J','Q','cost')}
             outcome='unknown'  # Metric movement is observational, never a causal outcome.
             changes=[]
-            for key in ('opening_types','source_id','start_ms','end_ms','decider'):
+            for key in ('opening_types','source_id','start_ms','end_ms','decider','selection_plan_hash'):
                 if pm.get(key)!=meta.get(key):changes.append(key)
-            dm=dict(meta,kind='delta',outcome=outcome,changes=changes,deltas=delta)
-            lessons.append(dict(id=digest([VERSION,evaluation,previous.get('id'),'delta']),text='Observed pair delta (not causal): '+json.dumps(delta,sort_keys=True)+'; changed='+','.join(changes),infer=False,metadata=dm))
+            dm=dict(meta,kind='delta',outcome=outcome,changes=changes,deltas=delta,paired_episode_id=pm.get('episode_id'),paired_evaluation_id=pm.get('evaluation_id'))
+            lessons.append(dict(id=digest([VERSION,evaluation,'delta']),text='Observed pair delta (not causal): '+json.dumps(delta,sort_keys=True)+'; changed='+','.join(changes),infer=False,metadata=dm))
     return lessons
 
 def bounded_selection(lessons):
@@ -85,6 +89,7 @@ def bounded_selection(lessons):
         if len(selected)>=MAX_LESSONS:break
         if not isinstance(lesson,dict) or not re.fullmatch(r'[a-f0-9]{64}',str(lesson.get('id'))):continue
         if not isinstance(lesson.get('text'),str) or not isinstance(lesson.get('metadata'),dict):continue
+        if any(l['id']==lesson['id'] for l in selected):continue
         trial=selected+[lesson]
         prompt={'edit_memory':prompt_data(trial)}
         if len(json.dumps(prompt,ensure_ascii=False,separators=(',',':')).encode())<=MAX_PROMPT_BYTES:selected=trial
@@ -153,10 +158,9 @@ def write_completed(report,root):
         from .eval_gates import read_shots
         try:shots,_=read_shots(root)
         except Exception:shots=[]
-        lessons=build_lessons(report,qa,spec,previous,shots)
         try:decider=read_json(root/'decisions-report.json').get('effective_mode','llm')
         except Exception:decider='llm'
-        for lesson in lessons:lesson['metadata']['decider']=decider
+        lessons=build_lessons(report,qa,spec,previous,shots,decider)
         status=store.put_many(lessons)
         selection.update(write_status=status.get('status','unknown'))
         selection['limitations'].extend(x for x in status.get('limitations',[]) if x not in selection['limitations'])

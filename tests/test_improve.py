@@ -72,3 +72,11 @@ def test_invalid_ids_recipes_and_comparability(tmp_path):
         with pytest.raises(ValueError):run_experiment(tmp_path,'trip',experiment_id=name,**common)
     with pytest.raises(ValueError):run_experiment(tmp_path,'trip',experiment_id='voice',recipe={'voiceover':True},execute=True,**common)
     assert not comparable_pair(dict(status='failed'),dict(status='passed'),{}, {})
+
+
+def test_malformed_seed_remains_pending_and_never_dispatches(tmp_path):
+    seed=tmp_path/'seed';seed.mkdir();(seed/'lessons.jsonl').write_text('{bad}\n')
+    def no_run(*a,**k):pytest.fail('invalid baseline dispatched')
+    c=run_experiment(tmp_path,'trip',experiment_id='bad-seed',iterations=1,episodes_root=tmp_path/'episodes',evals_root=tmp_path/'evals',seed_root=seed,execute=True,runner=no_run)
+    assert c['status']=='pending' and 'baseline not silently replaced' in ' '.join(c['limitations'])
+    assert read_json(tmp_path/'evals/learning-curves/latest.json')==c

@@ -87,3 +87,35 @@ def test_preferences_only_evidenced_types(tmp_path):
     result=m.apply_preferences(ctx,s)
     assert result['segments']==s['segments'] and result['coverage']['status']=='partial'
     assert 'no scene invented' in ' '.join(result['coverage']['limitations'])
+
+
+def test_delta_canonical_per_evaluation_and_actual_decider_changes():
+    r,q,s,shots=evidence('three','same-evaluation')
+    first=m.build_lessons(r,q,s,lesson('one','one'),shots,decider='heuristic')[1]
+    second=m.build_lessons(r,q,s,lesson('two','two'),shots,decider='heuristic')[1]
+    assert first['id']==second['id']
+    assert first['metadata']['paired_episode_id']=='one'
+    assert 'decider' in first['metadata']['changes']
+    assert first['metadata']['outcome']=='unknown'
+
+
+def test_shot_mapping_rejects_same_source_but_wrong_saved_interval():
+    r,q,s,shots=evidence()
+    shots[1]['source_start_ms']=1000
+    assert m.source_window(s,'shot-02',shots) is None
+
+
+def test_safe_opening_preference_cannot_move_closing_or_invent_labels(tmp_path):
+    r,q,s,shots=evidence()
+    s['segments'].append(dict(segment_id='d',source_id='s',raw_start_ms=8000,raw_end_ms=9000))
+    s['segments'][0].pop('semantic_evidence')
+    s['segments'][1]['semantic_evidence']=dict(method='planner_in_window_tile',source_id='s',frame_time_ms=1500,labels=['people'],subjects=[])
+    s.update(coverage=dict(status='full',limitations=[]),assumptions=[])
+    ctx=EpisodeContext('on',tmp_path,'family trip',memory_enabled=True)
+    ctx.memory_selection=dict(lessons=[],constraints=dict(blocked=[],opening_types=['people']),limitations=[])
+    # Moving b before a would create an a->c noncoalescing chain; current a,b touch
+    # but new b,a don't, so this safe preference preserves the exact last two.
+    result=m.apply_preferences(ctx,s)
+    assert result['segments'][0]['segment_id']=='b'
+    assert result['segments'][-2:]==s['segments'][-2:]
+    assert {x['segment_id']:(x['raw_start_ms'],x['raw_end_ms']) for x in result['segments']}=={x['segment_id']:(x['raw_start_ms'],x['raw_end_ms']) for x in s['segments']}
