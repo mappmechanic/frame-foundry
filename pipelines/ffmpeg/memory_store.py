@@ -25,7 +25,7 @@ _WORKERS = threading.BoundedSemaphore(4)
 _FIELDS = frozenset("episode_id goal footage_hash J Q cost cost_status rubric_scores decider outcome kind source_id start_ms end_ms opening_types evaluation_id method_version judge_model judge_provider changes deltas config_hash".split())
 _ID = re.compile(r"[0-9a-f]{64}\Z")
 _UNSAFE_KEY = re.compile(r"path|secret|token|password|credential|api.?key|transcript|media", re.I)
-_UNSAFE_TEXT = re.compile(r"(?:https?://|file://|(?:^|\s)(?:/|~/|[A-Za-z]:\\)|[\w.-]+[/\\][\w.-]+|\b(?:sk-|Bearer\s)|\b(?:api[_ -]?key|password|secret|token)\s*[:=])", re.I)
+_UNSAFE_TEXT = re.compile(r"(?:https?://|file://|(?:^|[\s(\"'])(?:/|~/|[A-Za-z]:\\)|[\w.-]+[/\\][\w.-]+|\b(?:sk-|gh[pousr]_|github_pat_|xox[baprs]-|AKIA[0-9A-Z]{16}|Bearer\s)|-----BEGIN .*PRIVATE KEY|\b(?:api[_ -]?key|password|secret|token)\s*[:=])", re.I)
 
 
 class MemoryStore(Protocol):
@@ -40,8 +40,10 @@ class _Unavailable(Exception):
     pass
 
 
-def _bounded(fn: Callable[[], Any], timeout: float = OP_TIMEOUT) -> Any:
+def _bounded(fn: Callable[[], Any], timeout: float | None = None) -> Any:
     """A hung SDK cannot delay caller shutdown or spawn unbounded workers."""
+    if timeout is None:
+        timeout = OP_TIMEOUT
     if not _WORKERS.acquire(blocking=False):
         raise _Unavailable("worker_capacity")
     done = threading.Event()
@@ -66,10 +68,10 @@ def _bounded(fn: Callable[[], Any], timeout: float = OP_TIMEOUT) -> Any:
 
 
 def _safe_string(value: str) -> bool:
-    key = os.environ.get("HYDRADB_API_KEY")
+    secrets = [v for k, v in os.environ.items() if _UNSAFE_KEY.search(k) and len(v) >= 8]
     return (len(value) <= 500 and not _UNSAFE_TEXT.search(value)
             and not any(ord(c) < 32 and c not in "\n\t" for c in value)
-            and not (key and key in value))
+            and not any(secret in value for secret in secrets))
 
 
 def _safe_value(value: Any, depth: int = 0) -> bool:
@@ -305,6 +307,7 @@ class HydraDBStore:
     def put_many(self, lessons: list[dict]) -> dict:
         rows, limitations = _batch(lessons)
         local_status = self.local.put_many(rows)
+        deadline = time.monotonic() + OP_TIMEOUT
         def ingest() -> str:
             if not self._guard.acquire(blocking=False):
                 raise ValueError("provider busy")
@@ -314,6 +317,8 @@ class HydraDBStore:
                     return "stored" if rows else "no_lessons"
                 client = self._get_client()
                 payload = [{**r, "metadata": {**r["metadata"], "lesson_id": r["id"]}} for r in pending]
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("deadline")
                 data = _data(client.context.ingest(type="memory", memories=json.dumps(payload, allow_nan=False), **self._scope()))
                 items = data.get("results")
                 if not isinstance(items, list) or len(items) != len(pending) or data.get("failed_count", 0):
@@ -331,6 +336,8 @@ class HydraDBStore:
                 for _ in range(MAX_POLLS):
                     if complete:
                         break
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError("deadline")
                     statuses = _data(client.context.status(ids=ids, **self._scope())).get("statuses")
                     if not isinstance(statuses, list) or len(statuses) != len(ids):
                         raise ValueError("invalid status")
@@ -341,6 +348,8 @@ class HydraDBStore:
                     if any(s not in {"queued", "processing", "completed"} for s in states) or any(s.get("error_code") or s.get("error_message") for s in by_id.values()):
                         raise ValueError("indexing failed")
                     complete = all(s == "completed" for s in states)
+                    if not complete:
+                        time.sleep(0.05)
                 if not complete:
                     raise ValueError("indexing pending")
                 self._synced.update(r["id"] for r in pending)
@@ -371,6 +380,8 @@ class HydraDBStore:
                 results: dict[str, dict] = {}
                 for chunk in chunks:
                     chunk = _object(chunk)
+                    if chunk.get("infer", False) is not False:
+                        raise ValueError("inferred result")
                     meta = _object(chunk.get("metadata"))
                     lesson_id = meta.get("lesson_id")
                     # Do not treat chunk IDs or provider source IDs as lesson IDs.

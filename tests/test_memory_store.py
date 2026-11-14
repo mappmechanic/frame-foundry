@@ -293,3 +293,60 @@ def test_malformed_ingestion_and_api_exception_fallback(tmp_path):
     client.query = fail
     assert store.query("quiet") == [lesson()]
     assert "PRIVATE" not in json.dumps(store.last_status)
+
+@pytest.mark.parametrize("text", ["(\"/private\")", "ghp_privatecredential", "github_pat_private", "Bearer xyz", "-----BEGIN RSA PRIVATE KEY-----"])
+def test_common_credentials_and_quoted_paths_rejected(tmp_path, text):
+    client = Client()
+    row = {**lesson(), "text": text}
+    store = ms.HydraDBStore(tmp_path / "memory", client=client)
+    assert store.put_many([row])["status"] == "no_lessons"
+    assert client.calls == []
+
+
+def test_other_configured_secret_rejected(tmp_path, monkeypatch):
+    monkeypatch.setenv("OTHER_PROVIDER_API_KEY", "some-other-private-value")
+    row = lesson(goal="some-other-private-value")
+    assert ms.LocalJsonlStore(tmp_path / "memory").put_many([row])["status"] == "no_lessons"
+
+
+def test_model_response_conversion_and_empty_remote_fallback(tmp_path):
+    class Model:
+        def __init__(self, value): self.value = value
+        def model_dump(self): return self.value
+    client = Client()
+    row = lesson()
+    client.query = lambda **kw: Model(envelope(chunks=[{"chunk_content": row["text"], "metadata": {**row["metadata"], "lesson_id": row["id"]}}]))
+    store = ms.HydraDBStore(tmp_path / "memory", client=client)
+    assert store.query("quiet") == [row]
+    assert store.last_status["backend"] == "hydradb"
+    store.local.put_many([row])
+    client.query = lambda **kw: envelope(chunks=[])
+    assert store.query("quiet") == [row]
+    assert store.last_status["limitations"] == ["no_remote_lessons"]
+
+
+def test_local_nonregular_fifo_never_blocks(tmp_path):
+    path = tmp_path / "memory"
+    os.mkfifo(path)
+    start = time.monotonic()
+    store = ms.LocalJsonlStore(path)
+    assert store.query("quiet") == []
+    assert store.put_many([lesson()])["status"] == "unavailable"
+    assert time.monotonic() - start < 0.3
+
+
+def test_late_sdk_completion_does_not_start_status_calls(tmp_path, monkeypatch):
+    monkeypatch.setattr(ms, "OP_TIMEOUT", 0.03)
+    client = Client()
+    released = threading.Event()
+    def late_ingest(**kw):
+        released.wait(1)
+        return envelope(results=[{"id": "source-0", "status": "queued", "infer": False}])
+    client.ingest = late_ingest
+    store = ms.HydraDBStore(tmp_path / "memory", client=client)
+    try:
+        assert store.put_many([lesson()])["status"] == "fallback"
+    finally:
+        released.set()
+    time.sleep(0.03)
+    assert not client.calls
