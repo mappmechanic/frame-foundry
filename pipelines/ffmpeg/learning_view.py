@@ -70,7 +70,7 @@ def _validated(curve):
             lessons = row.get('lessons_used')
             if not isinstance(lessons, list) or len(lessons) > 100 or not all(_text(x) for x in lessons):
                 raise ValueError('Invalid lesson identities')
-            if not _text(row.get('cost_status'), 80):
+            if not isinstance(row.get('cost_status'), str) or row['cost_status'] not in COST_STATES:
                 raise ValueError('Invalid cost status')
             clean['arms'][arm].append({k: row[k] for k in ('iteration', 'episode_id', 'status', *METRICS, 'cost_status', 'lessons_used')})
         clean['arms'][arm].sort(key=lambda r: r['iteration'])
@@ -94,7 +94,7 @@ def _validated(curve):
     return clean
 
 
-def read_curve(evals_root):
+def _read_latest(evals_root, directory, validator, pending):
     """Bounded, no-follow read of latest.json; missing/invalid/symlink => pending.
 
     Refuse symlinks in every path component, open directories relative to their
@@ -102,7 +102,7 @@ def read_curve(evals_root):
     """
     descriptors = []
     try:
-        path = Path(evals_root).expanduser().absolute() / 'learning-curves' / 'latest.json'
+        path = Path(evals_root).expanduser().absolute() / directory / 'latest.json'
         fd = os.open(path.anchor, os.O_RDONLY | os.O_DIRECTORY)
         descriptors.append(fd)
         for part in path.parts[1:-1]:
@@ -119,12 +119,102 @@ def read_curve(evals_root):
             raw = handle.read(MAX_BYTES + 1)
         if len(raw) > MAX_BYTES:
             raise ValueError('Too large')
-        return _validated(json.loads(raw))
+        return validator(json.loads(raw))
     except (OSError, ValueError, TypeError, KeyError, RecursionError, OverflowError):
-        return pending_curve()
+        return pending()
     finally:
         for fd in reversed(descriptors):
             os.close(fd)
+
+
+def read_curve(evals_root):
+    return _read_latest(evals_root, 'learning-curves', _validated, pending_curve)
+
+
+def pending_policy_comparison():
+    return dict(schema_version='1.0', status='pending', baseline=None, production=None,
+                comparison=dict(comparable=False, J=None, Q=None, model_usd=None))
+
+
+def _validated_policy(value):
+    if not isinstance(value, dict) or value.get('schema_version') != '1.0':
+        raise ValueError('Invalid policy comparison')
+    if value.get('status') == 'pending':
+        return pending_policy_comparison()
+    if value.get('status') != 'recorded' or not _text(value.get('experiment_id')):
+        raise ValueError('Invalid policy metadata')
+    created = value.get('created_at')
+    if not _text(created, 80) or datetime.fromisoformat(created.replace('Z', '+00:00')).tzinfo is None:
+        raise ValueError('Invalid timestamp')
+    out = dict(schema_version='1.0', status='recorded', experiment_id=value['experiment_id'],
+               created_at=created, baseline=None, production=None)
+    for arm in ('baseline', 'production'):
+        row = value.get(arm)
+        if not isinstance(row, dict) or not isinstance(row.get('episode_id'), str) or not ID.fullmatch(row['episode_id']):
+            raise ValueError('Invalid source')
+        if row.get('status') not in ('passed', 'failed', 'unavailable'):
+            raise ValueError('Invalid status')
+        if not isinstance(row.get('cost_status'), str) or row['cost_status'] not in COST_STATES:
+            raise ValueError('Invalid cost status')
+        fields = ('J', 'Q', 'model_usd', 'known_model_usd')
+        if not all(k in row and _metric(row[k], k in ('J', 'Q')) for k in fields):
+            raise ValueError('Invalid metric')
+        out[arm] = {k: row[k] for k in ('episode_id', 'status', 'cost_status', *fields)}
+    if out['baseline']['episode_id'] == out['production']['episode_id']:
+        raise ValueError('Same Episode is not an A/B pair')
+    delta = value.get('comparison')
+    if not isinstance(delta, dict) or type(delta.get('comparable')) is not bool:
+        raise ValueError('Invalid comparison')
+    for k in ('J', 'Q', 'model_usd'):
+        v = delta.get(k)
+        if k not in delta or (v is not None and (type(v) not in (int, float) or not math.isfinite(v))):
+            raise ValueError('Invalid delta')
+    limits = value.get('limitations')
+    if not isinstance(limits, list) or len(limits) > 100 or not all(_text(x, 2000) for x in limits):
+        raise ValueError('Invalid limitations')
+    out['comparison'] = {k: delta[k] for k in ('comparable', 'J', 'Q', 'model_usd')}
+    out['limitations'] = limits
+    return out
+
+
+def read_policy_comparison(evals_root):
+    """Parent writes policy-comparisons/latest.json; bounded no-follow optional read."""
+    return _read_latest(evals_root, 'policy-comparisons', _validated_policy, pending_policy_comparison)
+
+
+def public_policy_projection(value, allowed_ids):
+    """Whole pair fails closed; no free text, experiment IDs or private metadata.
+
+    Observations require two distinct exported passed Episodes with known scores
+    and complete costs. Delta eligibility additionally requires backend comparable.
+    Supplied deltas are never trusted: derive production minus baseline.
+    """
+    try:
+        value = _validated_policy(value)
+    except (ValueError, TypeError, KeyError, OverflowError):
+        value = pending_policy_comparison()
+    out = pending_policy_comparison()
+    out.update(status=value['status'], source_episode_ids=[],
+               limitations=['Recorded observations only; no causal or sponsor improvement claim.',
+                            'Both passed source Episodes, scores and complete costs must be publicly exported.'])
+    allowed = {x for x in allowed_ids if isinstance(x, str) and ID.fullmatch(x)}
+    rows = [value.get(arm) for arm in ('baseline', 'production')]
+    visible = value['status'] == 'recorded' and all(
+        r and r['episode_id'] in allowed and r['status'] == 'passed'
+        and r['cost_status'] in ('measured', 'estimated', 'complete', 'zero')
+        and all(r[k] is not None for k in ('J', 'Q', 'model_usd', 'known_model_usd'))
+        and r['known_model_usd'] <= r['model_usd']
+        and (r['cost_status'] != 'zero' or r['model_usd'] == 0)
+        for r in rows)
+    if not visible:
+        return out
+    for arm, row in zip(('baseline', 'production'), rows):
+        out[arm] = dict(row, data_url=f"/runs/{row['episode_id']}/run.json")
+    out['source_episode_ids'] = [r['episode_id'] for r in rows]
+    comparable = value['comparison']['comparable']
+    out['comparison'] = dict(comparable=comparable, **{
+        k: rows[1][k] - rows[0][k] if comparable else None for k in ('J', 'Q', 'model_usd')})
+    return out
 
 
 def public_projection(curve, allowed_ids):
@@ -160,7 +250,7 @@ def public_projection(curve, allowed_ids):
     declared = {d['iteration']: d['comparable'] for d in curve['deltas']}
     for i in sorted(on.keys() | off.keys()):
         a, b = on.get(i), off.get(i)
-        comparable = bool(declared.get(i) and a and b and a['published'] and b['published'])
+        comparable = bool(declared.get(i) and a and b and a['published'] and b['published'] and a['episode_id'] != b['episode_id'])
         d = dict(iteration=i, comparable=comparable)
         for k in ('J', 'Q', 'model_usd'):
             d[k] = a[k] - b[k] if comparable and a[k] is not None and b[k] is not None else None

@@ -316,3 +316,21 @@ def test_optional_curve_failure_does_not_block_export(setup,kind):
     export(setup)
     learning=json.loads((setup[2]/'public/runs/learning.json').read_text())
     assert learning['status']=='pending' and learning['source_episode_ids']==[]
+
+
+def test_policy_projection_uses_actual_exported_ids_and_replaces_stale_data(setup,report,monkeypatch):
+    from tests.test_policy_comparison_view import synthetic_policy, save
+    value=synthetic_policy();value.update(goal='SECRET',source='/private/SECRET')
+    save(setup[1],value)
+    for eid in ('synthetic-base','synthetic-prod'):
+        run_fixture(setup,report,eid=eid)
+    monkeypatch.setattr(exporter,'encode_video',fake_encoder)
+    export(setup)
+    path=setup[2]/'public/runs/policy-comparison.json'
+    p=json.loads(path.read_text());assert p['comparison']['comparable'] is True
+    assert 'SECRET' not in path.read_text() and 'experiment_id' not in p
+    (setup[0]/'synthetic-prod/finished.mp4').unlink()
+    export(setup);p=json.loads(path.read_text())
+    assert p['production'] is None and p['comparison']['comparable'] is False
+    (setup[1]/'policy-comparisons/latest.json').unlink()
+    export(setup);assert json.loads(path.read_text())['status']=='pending'

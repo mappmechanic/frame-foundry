@@ -63,12 +63,13 @@ const assert=require('node:assert/strict'),fs=require('node:fs');
  const evidence=process.env.PITCH_EVIDENCE_DIR||'/tmp/framefoundry-pitch-evidence';fs.mkdirSync(evidence,{recursive:true});
  // Every value below is synthetic offline test data, not a real run or score.
  const run=(id,time,Q,usd,status='measured')=>({id,created_at:time,qa_passed:true,video_url:`/runs/${id}/finished.mp4`,scores:{Q,J:id.endsWith('old')?.7:.8},cost:{usd,status}});
- let mode='valid',media='valid';
+ let mode='valid',media='valid',policy={schema_version:'1.0',status:'pending'};
  const runs=[run('test-only-old','2026-01-01T00:00:00Z',.5,2),run('test-only-new','2026-01-02T00:00:00Z',.8,1)];
  let index={schema_version:'1.0',mode:'recorded-demo',generated_at:'2026-01-03T00:00:00Z',lead_run_id:'test-only-old',runs};
  let board={schema_version:'1.0',generated_at:'2026-01-03T00:00:00Z',cohort:{episode_count:3,shipped:2,cost_complete:true,estimated:false,cost_per_shipped:2.5,known_subtotal:5,qa_known:3,qa_passed:2},factory:{work_order_count:7,pr_count:1,commit_count:12,ticket_to_pr_minutes:15,sample_count:7,pr_url:'https://github.com/mappmechanic/frame-foundry/pull/1'}};
  await page.route('**/runs/**',async route=>{
   const path=new URL(route.request().url()).pathname;
+  if(path==='/runs/policy-comparison.json')return route.fulfill({contentType:'application/json',body:JSON.stringify(policy)});
   if(path.endsWith('.mp4'))return route.fulfill({status:media==='valid'?200:404,contentType:'video/mp4',body:media==='valid'?fs.readFileSync(process.env.PITCH_VIDEO):Buffer.from('missing')});
   if(mode==='fetch-failed')return route.abort('failed');
   if(mode==='loading')return; // held request intentionally tests the loading state
@@ -76,6 +77,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs');
   return route.fulfill({contentType:'application/json',body:JSON.stringify(path.endsWith('index.json')?index:board)});
  });
  const open=async()=>{await page.goto(origin+'/pitch');if(mode!=='loading')await page.waitForFunction(()=>!document.getElementById('metrics-state').textContent.startsWith('Loading'));};
+ const policyReady=async()=>page.waitForFunction(()=>!document.getElementById('policy-state').textContent.startsWith('Loading'));
  const text=async id=>page.locator('#'+id).textContent();
  const go=async n=>{await page.locator('.slide:not([hidden])').focus();for(let i=1;i<n;i++)await page.keyboard.press('ArrowRight');};
  await open();assert.equal(await text('position'),'Slide 1 / 8');assert(await page.locator('#previous').isDisabled());
@@ -118,6 +120,40 @@ const assert=require('node:assert/strict'),fs=require('node:fs');
  assert(await page.locator('.slide:not([hidden])').evaluate(e=>getComputedStyle(e).animationName==='none'));
  await page.setViewportSize({width:390,height:844});await open();
  for(let n=1;n<=8;n++){assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.screenshot({path:`${evidence}/test-only-mobile-slide-${n}.png`,fullPage:true});if(n<8){await page.locator('.slide:not([hidden])').focus();await page.keyboard.press('ArrowRight');}}
+ // Production policy: explicitly synthetic, no ninth slide, no sponsor claim.
+ const policyRow=(id,J,Q,usd)=>({episode_id:id,status:'passed',J,Q,model_usd:usd,known_model_usd:usd,cost_status:'measured',data_url:`/runs/${id}/run.json`});
+ const recorded={schema_version:'1.0',status:'recorded',baseline:policyRow('test-only-old',.7,.5,2),production:policyRow('test-only-new',.8,.8,1),comparison:{comparable:true,J:900,Q:900,model_usd:900},goal:'SECRET',limitations:['SECRET']};
+ for(const state of ['pending','recorded','incomparable']){
+  policy=state==='pending'?{schema_version:'1.0',status:'pending'}:JSON.parse(JSON.stringify(recorded));
+  if(state==='incomparable')policy.comparison.comparable=false;
+  for(const [width,height] of [[1280,720],[1920,1080],[390,844]]){
+   await page.setViewportSize({width,height});await open();await policyReady();await go(3);
+   assert.equal(await page.locator('.slide').count(),8);
+   const content=await page.locator('#production-policy').textContent();assert(!content.includes('SECRET')&&!content.includes('900'));
+   assert.match(content,state==='pending'?/Pending evaluation/:state==='incomparable'?/incomparable pair/:/ΔJ 0.100 · ΔQ 0.300 · Δmodel USD -1.0000/);
+   assert.equal(await page.locator('#policy-observations a').count(),state==='pending'?0:2);
+   assert.equal(await text('cost'),'$2.5000');assert.equal(await text('judge'),'0.800');
+   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+   if(width>700)assert(await page.evaluate(()=>document.querySelector('footer').getBoundingClientRect().bottom<=innerHeight),JSON.stringify({state,width,height,geometry:await page.evaluate(()=>({slide:document.querySelector('.slide:not([hidden])').getBoundingClientRect().toJSON(),footer:document.querySelector('footer').getBoundingClientRect().toJSON()}))}));
+   await page.screenshot({path:`${evidence}/synthetic-policy-${state}-${width}.png`,fullPage:true});
+  }
+ }
+ for(const bad of ['private-id','foreign-url','same-id','failed','unknown','bad-enum','nan','boolean','over-unit','bad-comparable','missing-arm']){
+  policy=JSON.parse(JSON.stringify(recorded));const r=policy.production;
+  if(bad==='private-id'){r.episode_id='private-secret';r.data_url='/runs/private-secret/run.json';}
+  if(bad==='foreign-url')r.data_url='https://example.org/SECRET';
+  if(bad==='same-id')policy.production={...policy.baseline};
+  if(bad==='failed')r.status='failed';
+  if(bad==='unknown')r.model_usd=null;
+  if(bad==='bad-enum')r.cost_status='free';
+  if(bad==='nan')r.J=NaN;
+  if(bad==='boolean')r.model_usd=false;
+  if(bad==='over-unit')r.J=2;
+  if(bad==='bad-comparable')policy.comparison.comparable='yes';
+  if(bad==='missing-arm')policy.baseline=null;
+  await open();await policyReady();assert.match(await text('policy-state'),/Pending evaluation/);assert.equal(await page.locator('#policy-observations a').count(),0);
+ }
+ policy={schema_version:'1.0',status:'pending'};
  // Optional comparison snapshots must not turn unsupported evidence into a win.
  for(const comparison of [null,{}, {status:'recorded',qualified:false},
    {status:'recorded',qualified:true,arms:{llm:{episode_id:'test-only-old',q_per_dollar:11.9},decisions:{episode_id:'test-only-new',q_per_dollar:40.6}}}]){
