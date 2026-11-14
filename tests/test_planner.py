@@ -56,8 +56,8 @@ def context(tmp_path, analysis):
 
 def ai_response():
     return dict(interpretation='A family arrival then a scenic payoff', assumptions=['Sparse samples'],
-        segments=[dict(source_id='source-1', raw_start_ms=1000, raw_end_ms=21000, reason='Image 3 shows the arrival'),
-                  dict(source_id='source-0', raw_start_ms=0, raw_end_ms=25000, reason='Image 0 shows the scenic destination')],
+        segments=[dict(source_id='source-1', raw_start_ms=1000, raw_end_ms=9000, reason='Image 3 shows the arrival'),
+                  dict(source_id='source-0', raw_start_ms=0, raw_end_ms=9000, reason='Image 0 shows the scenic destination')],
         coverage=dict(status='full', limitations=[]))
 
 
@@ -107,13 +107,15 @@ def test_bounded_images_transcript_and_system(tmp_path):
     spec = plan_teaser(context(tmp_path, analysis), analysis, provider=provider)
     call = provider.calls[0]
     payload = json.loads(call['prompt'])
-    assert len(call['images']) == 6
+    assert len(call['images']) == 1
+    assert len(payload['candidates']) <= 8
+    assert all(len(c['transcript_snippet'])<=160 for c in payload['candidates'])
     assert all(max(size) <= 640 for size in call['sizes'])
-    assert len(json.dumps(payload['transcript'])) < 18500
+    assert 'transcript' not in payload and 'sources' not in payload
     assert len(call['prompt']) < 60000
-    assert call['role'] == 'planner' and call['max_output_tokens'] == 4096
+    assert call['role'] == 'planner' and call['max_output_tokens'] == 1024
     assert 'UNTRUSTED DATA' in call['system'] and 'tools' in call['system']
-    assert payload['images'][0]['source_time_ms'] == 4500
+    assert any(c.get('frame_time_ms')==4500 for c in payload['candidates'])
     assert spec['planner_mode'] == 'llm'
 
 
@@ -206,7 +208,8 @@ def test_maximum_40_source_sampling_bound(tmp_path):
         source['keyframes'] = frames
     provider = FakeProvider(ai_response())
     plan_teaser(context(tmp_path, analysis), analysis, provider=provider)
-    assert len(provider.calls[0]['images']) == 120
+    assert len(provider.calls[0]['images']) == 1
+    assert len(json.loads(provider.calls[0]['prompt'])['candidates']) <= 8
     assert len(provider.calls[0]['prompt']) < 60000
 
 

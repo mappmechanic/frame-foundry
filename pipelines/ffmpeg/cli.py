@@ -5,13 +5,13 @@ import argparse,copy,json,os,shutil,uuid,signal
 from .contracts import *
 from .episode import episode_lock,save_state
 from .budget import reserve_project_episode
-from .llm_provider import LLMProvider,ProviderError
+from .llm_provider import LLMProvider,ProviderError,ProviderBudgetError
 from .refinery import run_refinery
 from .planner import plan_teaser
 from .assembler import assemble
 from .qa_validator import validate_candidate
 
-def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixture=None,provider='env',visual_only=False):
+def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixture=None,provider='env',visual_only=False,evals_root=None,eval_labels=None,planner_retry=True):
     if visual_only and transcript_fixture is not None:raise StageError('INPUT_CONFLICT','refinery','Choose visual-only or a transcript fixture, not both')
     if not goal.strip():raise StageError('GOAL_EMPTY','refinery','Goal must not be blank')
     if not Path(footage_dir).is_dir():raise StageError('INPUT_EMPTY','refinery','Footage directory is unavailable')
@@ -21,15 +21,17 @@ def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixt
         directory=resolve_episode(root,episode_id)
         if directory.exists():raise StageError('EPISODE_EXISTS','refinery','Episode identity already exists')
         directory.mkdir();ctx=EpisodeContext(episode_id,directory,goal,fixture_mode=transcript_fixture is not None);attempts=[]
-        save_state(ctx,'accepted')
+        save_state(ctx,'accepted');report=None;evaluation=None;active_provider=None;planning_retried=False;first_eval_passed=None
         try:
             active_provider=provider
             if provider=='env':
                 try:active_provider=LLMProvider.from_env()
+                except ProviderBudgetError:raise
                 except ProviderError:active_provider=None
             budget_note=None
             if active_provider is not None:
                 try:reserve_project_episode(Path(os.environ.get('FRAMEFOUNDRY_PROJECT_BUDGET_DIR',str(Path(__file__).resolve().parents[2]))),str(directory))
+                except ProviderBudgetError:raise
                 except ProviderError as e:active_provider=None;budget_note=str(e)
             fixture=read_json(transcript_fixture) if transcript_fixture is not None else None
             def fixture_words(source):
@@ -52,7 +54,7 @@ def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixt
                 try:
                     save_state(ctx,'assembler');result=assemble(ctx,spec,analysis,attempt=index)
                     amended=read_json(result.spec_path);save_state(ctx,'validator')
-                    report=validate_candidate(ctx,result,amended,attempts=attempts,judge_provider=active_provider)
+                    report=validate_candidate(ctx,result,amended,attempts=attempts,judge_provider=None)
                     reasons=[c['name'] for c in report['checks'] if c['status']=='fail']
                     attempts.append(dict(index=index,stage='validator',passed=report['passed'],reasons=reasons,changes=[] if index==1 else ['Re-rendered with saved plan and independent normalization']))
                     report['attempts']=copy.deepcopy(attempts)
@@ -61,7 +63,30 @@ def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixt
                         shutil.copy2(result.timeline_path,directory/'timeline.otio')
                         shutil.copy2(result.spec_path,directory/'narrative-spec.json')
                         report.update(output_path='finished.mp4',timeline_path='timeline.otio',stage='delivery')
-                        validate_report(report);atomic_write_json(directory/'qa-report.json',report);save_state(ctx,'completed');return report
+                        validate_report(report);atomic_write_json(directory/'qa-report.json',report)
+                        from .evaluator import evaluate_episode
+                        evaluation=evaluate_episode(directory,provider=active_provider,evals_root=evals_root,labels=eval_labels,persist=False)
+                        if first_eval_passed is None:first_eval_passed=evaluation['gates']['passed']
+                        failed_gates={c['name'] for c in evaluation['gates']['checks'] if c['status']=='fail'}
+                        repairable_eval=bool(failed_gates & {'duration_target','word_cut_integrity','black_frames','frozen_frames','repeated_shots'})
+                        judge_fix=evaluation['judge'].get('fix_instruction') if evaluation['judge'].get('verdict')=='fail' else None
+                        if planner_retry and not planning_retried and active_provider is not None and index<3 and (repairable_eval or judge_fix):
+                            planning_retried=True
+                            fix=judge_fix or 'Repair failed deterministic gates: '+', '.join(sorted(failed_gates))
+                            spec=plan_teaser(ctx,analysis,provider=active_provider,retry_fix=fix[:160])
+                            if visual_only:
+                                spec['coverage']['status']='partial';spec['coverage']['limitations'].append('Speech-dependent coverage and word integrity unverified in explicit visual-only mode')
+                            attempts[-1]['changes'].append('One evaluation-driven Planner retry: '+fix[:160])
+                            evaluation=None
+                            continue
+                        if 'duration_target' in failed_gates:
+                            diagnostic=directory/'diagnostic.mp4'
+                            (directory/'finished.mp4').replace(diagnostic)
+                            report.update(passed=False,result='failed',output_path=None,error=StageError('EVAL_DURATION_FAILED','validator','Strict evaluation duration gate failed; clip retained only as diagnostic.mp4').as_dict())
+                            # Keep measured render evidence and G=0/Q=0 in the final evaluation.
+                        if evaluation['judge'].get('reason','') and evaluation['judge']['reason'].startswith('Judge blocked by budget:'):
+                            report.update(passed=False,result='failed',output_path=None,error=StageError('BUDGET_LIMIT','validator',evaluation['judge']['reason']).as_dict())
+                        return report
                     repairable=set(reasons)<={'loudness','true_peak','contact_sheet','output_encoding','output_dimensions','output_fps','render_duration'}
                     if report['integrated_lufs'] is None:repairable=False
                     if not repairable or index==3:break
@@ -74,18 +99,51 @@ def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixt
             error=StageError('INTERRUPTED','refinery','Episode interrupted');report=failure_report(ctx,error);report['attempts']=attempts
             atomic_write_json(directory/'qa-report.json',report);save_state(ctx,'interrupted',error);raise
         except Exception as error:
+            if isinstance(error,ProviderBudgetError):error=StageError('BUDGET_LIMIT','planner',str(error))
             if not isinstance(error,StageError):error=StageError('PROCESS_FAILED','refinery','Episode processing failed')
             report=failure_report(ctx,error);report['attempts']=attempts;validate_report(report)
             atomic_write_json(directory/'qa-report.json',report);save_state(ctx,'failed',error);return report
+        finally:
+            if report is not None:
+                from .evaluator import evaluate_episode,persist_report
+                try:
+                    # QA stays schema-valid and current even when the judge added usage.
+                    report['ai_usage'],report['cost']=usage_summary(directory)
+                    report['elapsed_seconds']=__import__('time').monotonic()-ctx.started
+                    validate_report(report);atomic_write_json(directory/'qa-report.json',report)
+                    if evaluation is None:
+                        evaluation=evaluate_episode(directory,provider=None if (report.get('error') or {}).get('code')=='BUDGET_LIMIT' else active_provider,evals_root=evals_root,labels=eval_labels,persist=False)
+                    evaluation['first_try_passed']=evaluation['gates']['passed'] if first_eval_passed is None else first_eval_passed
+                    judge=evaluation['judge']
+                    if judge['status']=='scored':
+                        report['goal_judge']=dict(status='scored',score=round(evaluation['scores']['J']*100,3),rationale='Evaluation rubric: '+judge['verdict'],evidence=sorted({sid for ids in judge['evidence'].values() for sid in ids}),provider=judge['provider'],model=judge['model'])
+                        if judge['unsupported_goal'] or judge['verdict']=='fail':
+                            report['coverage']['status']='partial';report['coverage']['limitations'].extend(judge['limitations'] or ['Evaluation judge flags partial Goal coverage'])
+                            if report['passed']:report['result']='partial'
+                    else:
+                        report['goal_judge']=unavailable_judge(judge['reason'] or 'Evaluation judge unavailable')
+                    report['ai_usage'],report['cost']=usage_summary(directory)
+                    report['elapsed_seconds']=__import__('time').monotonic()-ctx.started
+                    evaluation['timing']['elapsed_seconds']=report['elapsed_seconds']
+                    evaluation['provenance']['pr']=os.environ.get('FRAMEFOUNDRY_PR',evaluation['provenance'].get('pr'))
+                    validate_report(report);atomic_write_json(directory/'qa-report.json',report)
+                    persist_report(evaluation,directory,evals_root)
+                    state=read_json(directory/'state.json')['stage']
+                    if state!='interrupted':save_state(ctx,'completed' if report['passed'] else 'failed')
+                except Exception as eval_error:
+                    report.update(passed=False,result='failed',output_path=None,error=StageError('EVAL_PERSISTENCE_FAILED','validator','Evaluation or persistence failed: '+type(eval_error).__name__).as_dict())
+                    atomic_write_json(directory/'qa-report.json',report);save_state(ctx,'failed')
+
 
 def _run_main(argv=None):
     p=argparse.ArgumentParser();p.add_argument('--footage-dir',required=True,type=Path);p.add_argument('--goal',required=True);p.add_argument('--episode');p.add_argument('--episodes-root',type=Path,default=Path(__file__).resolve().parents[2]/'episodes');p.add_argument('--transcript-fixture',type=Path)
+    p.add_argument('--evals-root',type=Path);p.add_argument('--eval-labels',type=Path);p.add_argument('--no-planner-retry',action='store_true')
     p.add_argument('--visual-only',action='store_true',help='Explicit diagnostic mode without ASR; speech integrity remains unverified')
     args=p.parse_args(argv)
     def terminate(signum,frame):raise KeyboardInterrupt()
     old=signal.signal(signal.SIGTERM,terminate)
     try:
-        report=run_episode(args.footage_dir,args.goal,episodes_root=args.episodes_root,episode_id=args.episode,transcript_fixture=args.transcript_fixture,visual_only=args.visual_only)
+        report=run_episode(args.footage_dir,args.goal,episodes_root=args.episodes_root,episode_id=args.episode,transcript_fixture=args.transcript_fixture,visual_only=args.visual_only,evals_root=args.evals_root,eval_labels=args.eval_labels,planner_retry=not args.no_planner_retry)
         print(json.dumps(dict(episode_id=report['episode_id'],result=report['result'],passed=report['passed'],error=report['error'],tokens=dict(input=sum(c['input_tokens'] or 0 for c in report['ai_usage']),output=sum(c['output_tokens'] or 0 for c in report['ai_usage']),complete=all(c['input_tokens'] is not None and c['output_tokens'] is not None for c in report['ai_usage'] if c['status']!='blocked')),cost=report['cost'],goal_judge=report['goal_judge'],coverage=report['coverage'])))
         return 0 if report['passed'] else 1
     except StageError as e:print(e);return 2

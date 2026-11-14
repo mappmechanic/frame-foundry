@@ -3,17 +3,20 @@ from __future__ import annotations
 
 from copy import deepcopy
 import json
+import hashlib
+import os
 import math
 from pathlib import Path
 import re
 import tempfile
 
-from PIL import Image
+from PIL import Image, ImageDraw
 from jsonschema import Draft202012Validator, ValidationError
 
 from .contracts import EpisodeContext, StageError, atomic_write_json, validate_narrative
 from .goal_parser import parse_goal
-from .llm_provider import LLMProvider, ProviderError
+from .candidates import extract_candidates,rank_candidates
+from .llm_provider import LLMProvider, ProviderError, ProviderBudgetError
 
 _DEFAULT_PROVIDER = object()
 _SYSTEM = '''You plan a source-backed teaser, returning only the requested JSON object.
@@ -74,6 +77,41 @@ def _planner_images(ctx, sources, directory):
             except (OSError, ValueError):
                 continue
     return images, provenance
+
+
+def _compact_evidence(ctx, analysis, directory):
+    candidates=analysis.get('candidates')
+    if candidates is None:candidates=extract_candidates(analysis,ctx.episode_dir)
+    top=rank_candidates(candidates,ctx.goal,top_n=8)
+    rows=[];tiles=[]
+    for c in top:
+        row={k:c[k] for k in ('candidate_id','source_id','start_ms','end_ms','transcript_snippet','quality','quality_method') if k in c}
+        row['transcript_snippet']=row.get('transcript_snippet','')[:160]
+        audio=c.get('audio',{})
+        row['audio']={k:audio[k] for k in ('rms','speech_fraction','speech_status','speech_method') if k in audio}
+        if c.get('frame_path'):
+            try:
+                with Image.open(_safe_path(ctx.episode_dir,c.get('canonical_frame_path') or c['frame_path'])) as image:
+                    image=image.convert('RGB');image.thumbnail((160,160))
+                    tile=Image.new('RGB',(160,192),'black');tile.paste(image,((160-image.width)//2,0))
+                    ImageDraw.Draw(tile).text((2,161),str(c['candidate_id'])[-8:],fill='white')
+                    ImageDraw.Draw(tile).text((2,177),f"{c['source_id']} {c['start_ms']}ms",fill='white')
+                row['tile_index']=len(tiles);row['frame_time_ms']=c.get('frame_time_ms');tiles.append(tile)
+            except (OSError,ValueError):pass
+        rows.append(row)
+    images=[]
+    if tiles:
+        cols=min(4,len(tiles));sheet=Image.new('RGB',(cols*160,((len(tiles)+cols-1)//cols)*192),'black')
+        for i,tile in enumerate(tiles):sheet.paste(tile,((i%cols)*160,(i//cols)*192))
+        path=Path(directory)/'candidate-sheet.jpg';sheet.save(path,'JPEG',quality=65);images=[path]
+    return rows,images
+
+
+def _check_candidate_mapping(data,rows):
+    Draft202012Validator(_RESPONSE_SCHEMA).validate(data)
+    for segment in data.get('segments',[]):
+        if not any(c['source_id']==segment.get('source_id') and c['start_ms']<=segment.get('raw_start_ms',-1)<segment.get('raw_end_ms',-1)<=c['end_ms'] for c in rows):
+            raise ValueError('Planner interval not mapped wholly to supplied candidate')
 
 
 def _transcript(words, sources, segments=None, limit=18000):
@@ -198,7 +236,7 @@ def _reconstruct(ctx, analysis, intent, response, mode):
     return spec
 
 
-def plan_teaser(ctx: EpisodeContext, analysis: dict, *, provider=_DEFAULT_PROVIDER) -> dict:
+def plan_teaser(ctx: EpisodeContext, analysis: dict, *, provider=_DEFAULT_PROVIDER,retry_fix=None) -> dict:
     """Omitted provider uses environment; explicit None forces deterministic mode."""
     intent = parse_goal(ctx.goal)
     if analysis.get('episode_id') != ctx.episode_id or analysis.get('goal') != ctx.goal:
@@ -207,21 +245,46 @@ def plan_teaser(ctx: EpisodeContext, analysis: dict, *, provider=_DEFAULT_PROVID
     if provider is _DEFAULT_PROVIDER:
         try:
             provider = LLMProvider.from_env()
+        except ProviderBudgetError:
+            raise
         except ProviderError:
             provider, cause = None, 'Provider configuration failed'
     spec = None
     if provider is not None:
         try:
             with tempfile.TemporaryDirectory(prefix='planner-') as directory:
-                images, provenance = _planner_images(ctx, analysis['sources'], directory)
+                rows, images = _compact_evidence(ctx,analysis,directory)
                 payload = dict(goal=ctx.goal, constraints=dict(target_duration_ms=intent.target_duration_ms, aspect_ratio=intent.aspect_ratio),
-                    sources=[dict(source_id=s['source_id'], duration_ms=s['duration_ms']) for s in analysis['sources']],
-                    images=provenance, transcript=_transcript(analysis.get('words', []), analysis['sources']),
-                    response_schema=_RESPONSE_SCHEMA)
-                response = provider.complete_json(system=_SYSTEM, prompt=json.dumps(payload), images=images,
-                    role='planner', episode_dir=ctx.episode_dir, max_output_tokens=4096)
-                spec = _reconstruct(ctx, analysis, intent, response.data, 'llm')
-                spec['assumptions'].append('Only sampled images and clipped transcript were inspected, not exhaustive footage')
+                    candidates=rows,response_schema=_RESPONSE_SCHEMA)
+                if retry_fix is not None:payload['fix_instruction']=str(retry_fix)[:160]
+                # Cache only validated source-backed decisions, never media or credentials.
+                from .evaluator import footage_fingerprint
+                identity=dict(footage=footage_fingerprint(analysis['sources']),goal=ctx.goal,provider=getattr(provider,'provider',None),model=getattr(provider,'model',None),protocol='compact-planner-1',candidates=rows,fix=retry_fix)
+                key=hashlib.sha256(json.dumps(identity,sort_keys=True).encode()).hexdigest()
+                cache=Path(os.environ.get('FRAMEFOUNDRY_CACHE_DIR',str(Path(__file__).resolve().parents[2]/'.inference-cache')))/'planner'/f'{key}.json'
+                data=None
+                if identity['footage'] and cache.is_file():
+                    try:
+                        from .contracts import read_json
+                        entry=read_json(cache)
+                        if entry.get('key')==key:
+                            _check_candidate_mapping(entry['data'],rows)
+                            _reconstruct(ctx,analysis,intent,entry['data'],'llm')
+                            data=entry['data']
+                    except (OSError,ValueError,TypeError,KeyError,StageError,ValidationError):pass
+                hit=data is not None
+                if not hit:
+                    response = provider.complete_json(system=_SYSTEM+' Select only intervals wholly inside the supplied candidates. Tile labels map to candidate ids. Keep each reason <=160 characters.',prompt=json.dumps(payload),images=images,
+                        role='planner',episode_dir=ctx.episode_dir,max_output_tokens=1024)
+                    data=response.data
+                    _check_candidate_mapping(data,rows)
+                spec = _reconstruct(ctx, analysis, intent, data, 'llm')
+                if not hit and identity['footage']:
+                    atomic_write_json(cache,dict(key=key,data=data,historical_usage=getattr(response,'usage',{})))
+                if hit:spec['assumptions'].append('Validated Planner cache hit; historical inference not charged again')
+                spec['assumptions'].append('Only top-eight candidate snippets and one tiled preview were inspected, not exhaustive footage')
+        except ProviderBudgetError:
+            raise
         except ProviderError:
             cause = 'Provider call failed or was blocked'
         except (ValueError, TypeError, KeyError, StageError, OSError, ValidationError):

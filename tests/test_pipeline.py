@@ -43,7 +43,9 @@ def test_report_schema_rejects_forged_success(output_set):
 
 def test_ambiguous_fallback_episode_identity(input_set,tmp_path):
     report=run_episode(input_set,'teaser',episodes_root=tmp_path,episode_id='one',transcript_fixture=input_set/'transcript-fixture.json',provider=None)
-    assert report['passed'] and report['coverage']['status']=='partial'
+    assert not report['passed'] and report['error']['code']=='EVAL_DURATION_FAILED'
+    assert (tmp_path/'one'/'diagnostic.mp4').exists()
+    assert read_json(tmp_path/'one'/'eval-report.json')['scores']['Q']==0
     with pytest.raises(StageError):run_episode(input_set,'teaser',episodes_root=tmp_path,episode_id='one',provider=None)
     with pytest.raises(StageError):resolve_episode(tmp_path,'../../escape')
     with pytest.raises(ValueError):atomic_write_json(tmp_path/'nonfinite.json',dict(x=float('nan')))
@@ -85,15 +87,18 @@ def test_mocked_agent_run_retains_planner_and_judge_tokens(tmp_path,input_set,mo
         return 200,json.dumps(dict(stop_reason='end_turn',content=[dict(type='text',text=json.dumps(data))],usage=dict(input_tokens=1000,output_tokens=100))).encode()
     from decimal import Decimal
     provider=LLMProvider('anthropic','dummy-not-a-real-key','claude-sonnet-4-5',(Decimal(3),Decimal(15)),transport=transport)
-    report=run_episode(input_set,'10 second teaser',episodes_root=tmp_path,episode_id='mock-agent',transcript_fixture=input_set/'transcript-fixture.json',provider=provider)
-    assert report['passed'] and response_count[0]==2
+    report=run_episode(input_set,'8 second teaser',episodes_root=tmp_path,episode_id='mock-agent',transcript_fixture=input_set/'transcript-fixture.json',provider=provider,planner_retry=False)
+    assert report['passed'] and response_count[0]==1
+    # Synthetic sources repeat the same image: strict eval gate skips judgment.
+    assert read_json(tmp_path/'mock-agent'/'eval-report.json')['scores']['G']==0
     assert read_json(tmp_path/'mock-agent'/'narrative-spec.json')['planner_mode']=='llm'
-    assert [c['role'] for c in report['ai_usage']]==['planner','judge']
+    assert [c['role'] for c in report['ai_usage']]==['planner']
     assert all(c['input_tokens']==1000 for c in report['ai_usage'])
     assert report['cost']['known_ai_usd']>0 and report['cost']['status']=='unknown'
     assert 'dummy-not-a-real-key' not in json.dumps(report)
 
-def test_project_and_episode_budget_are_closed(tmp_path):
+def test_project_and_episode_budget_are_closed(tmp_path,monkeypatch):
+    monkeypatch.setenv('FRAMEFOUNDRY_PROJECT_SPENT_USD','475')
     with pytest.raises(ProviderError):assert_can_spend(None,paid_enabled=True,episode_spent_usd=0,project_spent_usd=0)
     with pytest.raises(ProviderError):assert_can_spend(1,paid_enabled=False,episode_spent_usd=0,project_spent_usd=0)
     with pytest.raises(ProviderError):assert_can_spend(1,paid_enabled=True,episode_spent_usd=5,project_spent_usd=10)

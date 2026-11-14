@@ -324,7 +324,7 @@ def validate_eval_report(report):
 def append_scoreboard(report, evals_root=None):
     """Locked, fsynced JSONL append of the whole report; idempotent per evaluation_id."""
     validate_eval_report(report)
-    root = Path(evals_root or DEFAULT_EVALS_ROOT)
+    root = Path(evals_root or os.environ.get('FRAMEFOUNDRY_EVALS_ROOT') or DEFAULT_EVALS_ROOT)
     root.mkdir(parents=True, exist_ok=True)
     path = root / 'scoreboard.jsonl'
     line = json.dumps(report, sort_keys=True, allow_nan=False, separators=(',', ':')).encode() + b'\n'
@@ -379,7 +379,7 @@ def evaluate_episode(episode_dir, *, provider=None, evals_root=None, labels=None
     """
     started = time.monotonic()
     root = Path(episode_dir).resolve()
-    evals_root = Path(evals_root) if evals_root is not None else DEFAULT_EVALS_ROOT
+    evals_root = Path(evals_root) if evals_root is not None else Path(os.environ.get('FRAMEFOUNDRY_EVALS_ROOT',DEFAULT_EVALS_ROOT))
     limitations = []
     gates = eval_gates.run_gates(root)
     ctx = gates['context']

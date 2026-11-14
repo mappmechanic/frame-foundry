@@ -80,9 +80,11 @@ def timeline_ranges(timeline, *, episode_dir):
     return ranges
 
 
-def _normalize(joined, candidate):
+def _normalize(joined, candidate, *, target_i=-14):
+    # AAC can create intersample overshoot; 1 dB encoding headroom keeps the
+    # delivered <= -1 dBTP gate independent from normalization metadata.
     measured = _run(_ffmpeg() + ['-i', str(joined), '-vn', '-af',
-        'loudnorm=I=-14:TP=-1:LRA=11:print_format=json', '-f', 'null', '-']).stderr
+        f'loudnorm=I={target_i}:TP=-2:LRA=11:print_format=json', '-f', 'null', '-']).stderr
     try:
         # loudnorm JSON is emitted on stderr after normal FFmpeg progress.
         stats = json.loads(measured[measured.rfind('{'):measured.rfind('}') + 1])
@@ -96,7 +98,7 @@ def _normalize(joined, candidate):
                           '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-ar', '48000',
                           '-ac', '2', '-threads', '2', '-movflags', '+faststart', str(candidate)])
         return
-    filter_ = ('loudnorm=I=-14:TP=-1:LRA=11:linear=true:print_format=json:'
+    filter_ = (f'loudnorm=I={target_i}:TP=-2:LRA=11:linear=true:print_format=json:'
                f'measured_I={stats["input_i"]}:measured_TP={stats["input_tp"]}:'
                f'measured_LRA={stats["input_lra"]}:measured_thresh={stats["input_thresh"]}:'
                f'offset={stats["target_offset"]}')
@@ -104,6 +106,21 @@ def _normalize(joined, candidate):
                       '-c:v', 'copy', '-af', filter_, '-c:a', 'aac', '-b:a', '192k',
                       '-ar', '48000', '-ac', '2', '-threads', '2',
                       '-movflags', '+faststart', str(candidate)])
+    # Measure the encoded MP4, not normalization metadata. High-crest-factor
+    # source audio plus AAC may undershoot LUFS despite valid two-pass inputs.
+    # One bounded re-normalization from the lossless joined audio uses the upper
+    # inclusive target (-13) while retaining -2 dBTP encoding headroom. Delivery
+    # still requires the independent [-15,-13]/<=-1 gates; never waive them.
+    if target_i == -14:
+        measured = _run(_ffmpeg() + ['-i',str(candidate),'-vn','-af',
+            'loudnorm=I=-14:TP=-1:LRA=11:print_format=json','-f','null','-']).stderr
+        try:
+            encoded=json.loads(measured[measured.rfind('{'):measured.rfind('}')+1])
+            i,p=float(encoded['input_i']),float(encoded['input_tp'])
+        except (ValueError,KeyError):
+            return  # independent validator will reject missing evidence
+        if math.isfinite(i) and math.isfinite(p) and (not -15<=i<=-13 or p>-1):
+            _normalize(joined,candidate,target_i=-13)
 
 
 def render_timeline(timeline, candidate_path, *, episode_dir):

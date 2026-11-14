@@ -85,6 +85,8 @@ def run_refinery(ctx,footage_dir,*,transcriber=None):
             tokens=[w['text'].lower() for w in ws if w['start_ms']<b and w['end_ms']>a]
             scenes.append(dict(scene_id=f'{sid}-scene-{j}',source_id=sid,start_ms=a,end_ms=b,thumbnail_path=frame['path'],brightness=brightness,sharpness=sharpness,motion=motion,tokens=tokens))
     analysis=dict(schema_version='1.0',episode_id=ctx.episode_id,goal=ctx.goal,sources=sources,scenes=scenes,words=words,exclusions=excluded)
+    from .candidates import extract_candidates
+    analysis['candidates']=extract_candidates(analysis,ctx.episode_dir)
     atomic_write_json(ctx.episode_dir/'transcript.json',dict(schema_version='1.0',episode_id=ctx.episode_id,words=words))
     atomic_write_json(ctx.episode_dir/'analysis.json',analysis);atomic_write_json(ctx.episode_dir/'proxy-map.json',maps)
     return analysis

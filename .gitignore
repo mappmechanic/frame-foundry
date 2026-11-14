@@ -20,3 +20,8 @@ evals/results/
 *.egg-info/
 build/
 dist/
+
+evals/.inference-cache/
+evals/pairwise/
+evals/pairwise.jsonl
+evals/.*.lock
