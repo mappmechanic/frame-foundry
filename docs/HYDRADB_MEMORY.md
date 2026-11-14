@@ -117,7 +117,7 @@ Lessons require a lower-case hex64 ID, nonempty exact text <=500 characters,
 
 Unknown input fields are removed before persistence/dispatch; malformed or unsafe
 lessons are rejected. Remote results with unknown metadata fields are rejected,
-not silently trusted. Nested maps, strings, lists and numeric values are bounded;
+not silently trusted. Nested maps, strings, lists and numeric values are bounded (<=512 total value nodes);
 non-finite scores, invalid hashes and inverted/negative intervals are rejected.
 Path/URL/credential-looking text and configured credential values are forbidden even inside
 allowlisted fields. Source IDs must be opaque identities, not source paths.

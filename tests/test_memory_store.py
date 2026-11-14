@@ -350,3 +350,11 @@ def test_late_sdk_completion_does_not_start_status_calls(tmp_path, monkeypatch):
         released.set()
     time.sleep(0.03)
     assert not client.calls
+
+
+def test_nested_validation_total_budget(tmp_path):
+    # Branch/depth bounds alone would still allow expensive synchronous validation.
+    row = lesson(rubric_scores={str(i): {str(j): [0] * 32 for j in range(32)} for i in range(32)})
+    start = time.monotonic()
+    assert ms.LocalJsonlStore(tmp_path / "memory").put_many([row])["status"] == "no_lessons"
+    assert time.monotonic() - start < 0.5

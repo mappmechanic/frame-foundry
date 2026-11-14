@@ -74,8 +74,11 @@ def _safe_string(value: str) -> bool:
             and not any(secret in value for secret in secrets))
 
 
-def _safe_value(value: Any, depth: int = 0) -> bool:
-    if depth > 4:
+def _safe_value(value: Any, depth: int = 0, budget: list[int] | None = None) -> bool:
+    if budget is None:
+        budget = [512]
+    budget[0] -= 1
+    if depth > 4 or budget[0] < 0:
         return False
     if value is None or isinstance(value, bool):
         return True
@@ -84,11 +87,11 @@ def _safe_value(value: Any, depth: int = 0) -> bool:
     if isinstance(value, str):
         return _safe_string(value)
     if isinstance(value, list):
-        return len(value) <= 32 and all(_safe_value(v, depth + 1) for v in value)
+        return len(value) <= 32 and all(_safe_value(v, depth + 1, budget) for v in value)
     if isinstance(value, dict):
         return len(value) <= 32 and all(
             isinstance(k, str) and len(k) <= 64 and not _UNSAFE_KEY.search(k)
-            and _safe_string(k) and _safe_value(v, depth + 1) for k, v in value.items())
+            and _safe_string(k) and _safe_value(v, depth + 1, budget) for k, v in value.items())
     return False
 
 
