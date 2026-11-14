@@ -636,3 +636,44 @@ recorded PR-title scope coverage, **not** clip latency, completion, or merge.
 contact sheets to anyone who can reach the URL. `noindex` and `robots.txt` reduce
 discovery; they are **not** authentication, authorization, or confidentiality.
 Review the exported runs and get any needed family consent before deployment.
+
+### Sedona demo: goal-driven text overlays (WO-11)
+
+On the keyed Mac, after pulling this branch and using the existing venv/FFmpeg:
+
+```sh
+make demo-arizona ARGS="--episode az-sedona-overlays-$(date +%H%M%S) --overlays --voiceover --no-planner-retry"
+make site
+# Publish manually only after inspecting the verified export:
+# npx vercel deploy site --prod
+```
+
+The demo now uses **Things to do in Sedona with Kids**, with the ordered sections
+**Halloween in Uptown Sedona** and **Hilton Sedona Resort at Bell Rock**. The Planner
+maps those sections within its existing single call; no additional Overlay model
+call is made. `--no-planner-retry` makes this demo's one-Planner/one-Judge behavior
+explicit. It does not bypass QA. Existing API/TTS keys and spending caps apply.
+
+For custom footage use `framefoundry run --footage-dir /path --goal 'Your title'
+--overlays --section 'First item' --section 'Second item'` plus existing options.
+Listed sections automatically enable overlays unless `--no-overlays` overrides
+that default. Without listed sections, overlays default off. `FRAMEFOUNDRY_OVERLAY_FONT`
+can select a local bold sans font if system DejaVu/Arial is unavailable.
+
+Cards use literal UTF-8 text files, 200ms fade/slide-in and 150ms fade-out, with
+stationary readability >=1.2s, <=2 lines / 42 characters per line, full animated
+shadow bounds inside the upper12%/lower20% UI-safe clearance, and no cut-spanning
+text. Face placement is best-effort from one local crop-matched CPU sample, not
+full face tracking. Labels without retained image/transcript evidence or a safe
+readable interval are omitted with recorded partial-coverage limitations;
+requested venue names remain supplied context, not independently verified GPS.
+
+`narrative-spec.json` retains the render-bound card plan; QA/evaluation checks
+geometry, duration, character limits, cut clearance and output/plan/font/style
+hashes. `overlay_fit` is requested in the existing Judge call without reweighting
+J/Q. Burned-in text appears in both local and exported recorded previews.
+No live Mac run or model scores are invented by offline tests. The local real
+Arizona full-source technical check measured -13.91 LUFS / -1.47 dBTP and generated
+a Contact Sheet, but had no reliable section/ASR/VO acceptance; the keyed command
+above supplies that separate live verification. Existing historical runs stay
+unchanged.

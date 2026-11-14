@@ -451,7 +451,8 @@ def evaluate_episode(episode_dir, *, provider=None, evals_root=None, labels=None
         judge = eval_judge.run_judge(
             episode_dir=root, evals_root=evals_root, provider=active, goal=goal, shots=ctx['shots'],
             duration_ms=render['duration_ms'], aspect_ratio=spec.get('aspect_ratio'), render_path=render_path,
-            render_hash=render_hash, footage_hash=footage_hash, render_size=(render['width'], render['height']))
+            render_hash=render_hash, footage_hash=footage_hash, render_size=(render['width'], render['height']),
+            **({'overlays':spec['overlays']} if spec.get('overlays') else {}))
     J = judge.pop('J', None)
     if judge['status'] != 'scored':
         J = None

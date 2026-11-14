@@ -113,6 +113,12 @@ def validate_candidate(ctx,result,spec,*,attempts=None,judge_provider=_DEFAULT):
         build_contact_sheet(result.candidate_path,result.cut_times_ms,ctx.episode_dir/'contact-sheet.jpg')
         report['contact_sheet_path']='contact-sheet.jpg';check('contact_sheet',True,None)
     except Exception as exc:check('contact_sheet',False,f'Cut-boundary evidence unavailable: {exc}; regenerate contact sheet')
+    from .overlays import verify
+    if spec.get('overlays'):
+        try:checks.extend(verify(spec,result.candidate_path,result.cut_times_ms,result.duration_ms))
+        except Exception:checks.append(dict(name='overlay_render_binding',status='fail',reason='Overlay verification unavailable',required=True))
+        report['limitations'].extend(spec['overlays']['limitations'])
+    else:report['limitations'].append('Overlays disabled; overlay checks not applicable')
     report['checks']=checks;technical=all(c['status']=='pass' for c in checks)
     if technical:
         judge=judge_goal(ctx,spec,result,words=words) if judge_provider is _DEFAULT else judge_goal(ctx,spec,result,provider=judge_provider,words=words)

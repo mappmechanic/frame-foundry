@@ -189,6 +189,11 @@ def assemble(ctx: EpisodeContext, spec: dict, analysis: dict, *, attempt: int = 
     from .disk_safety import require_free_disk
     require_free_disk(ctx.episode_dir,stage='assembler')
     timeline, amended = build_timeline(spec, analysis)
+    from .overlays import compile_cards,burn
+    amended=compile_cards(amended,analysis,timeline,ctx.episode_dir)
+    if amended.get("overlays"):
+        metadata=_plain_metadata(timeline.metadata);metadata["overlays"]=_plain_metadata(amended["overlays"])
+        timeline=_with_metadata(timeline,metadata)
     directory = Path(ctx.episode_dir) / 'work' / f'attempt-{attempt}'
     directory.mkdir(parents=True, exist_ok=True)
     timeline_path = directory / 'timeline.otio'
@@ -202,6 +207,10 @@ def assemble(ctx: EpisodeContext, spec: dict, analysis: dict, *, attempt: int = 
         raise StageError('TIMELINE_IO', 'assembler', f'OTIO persistence failed: {exc}') from exc
     atomic_write_json(spec_path, amended)
     metadata = render_timeline(saved, candidate_path, episode_dir=ctx.episode_dir)
+    if amended.get('overlays'):
+        overlaid=directory/'overlaid.mp4'
+        burn(candidate_path,overlaid,amended['overlays']);overlaid.replace(candidate_path)
+        atomic_write_json(spec_path,amended)
     if abs(metadata['duration_ms'] - amended['target_duration_ms']) > 1000:
         limitation = (f'Rendered duration {metadata["duration_ms"]}ms is outside '
                       f'target {amended["target_duration_ms"]}ms ±1000ms')

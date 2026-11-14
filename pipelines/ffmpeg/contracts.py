@@ -18,6 +18,8 @@ class EpisodeContext:
     fixture_mode: bool = False
     target_seconds: float | None = None
     aspect_override: str | None = None
+    overlay_mode: bool | None = None
+    overlay_sections: list[str] = field(default_factory=list)
 
 class StageError(RuntimeError):
     def __init__(self, code, stage, message, source_id=None, repairable=False):

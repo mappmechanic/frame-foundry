@@ -443,6 +443,224 @@
           ]
         }
       }
+    },
+    "overlays": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "const": "goal-overlays-1"
+        },
+        "title": {
+          "type": "string"
+        },
+        "sections": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "string"
+          }
+        },
+        "proofs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "section": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 7
+              },
+              "source_id": {
+                "type": "string"
+              },
+              "start_ms": {
+                "type": "integer"
+              },
+              "end_ms": {
+                "type": "integer"
+              },
+              "cue": {
+                "enum": [
+                  "costumes",
+                  "parade",
+                  "shops",
+                  "pool",
+                  "resort",
+                  "red_rocks"
+                ]
+              },
+              "frame_time_ms": {
+                "type": "integer"
+              },
+              "frame_path": {
+                "type": "string"
+              },
+              "frame_sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            },
+            "required": [
+              "section",
+              "source_id",
+              "start_ms",
+              "end_ms",
+              "cue",
+              "frame_time_ms",
+              "frame_path",
+              "frame_sha256"
+            ]
+          }
+        },
+        "cards": {
+          "type": "array",
+          "maxItems": 9,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "x": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "y": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "width": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "height": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "fontsize": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "start_frame": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "end_frame": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 85
+              },
+              "position": {
+                "enum": [
+                  "top",
+                  "lower"
+                ]
+              },
+              "kind": {
+                "enum": [
+                  "title",
+                  "section"
+                ]
+              },
+              "shot_id": {
+                "type": "string",
+                "pattern": "^shot-[0-9]{2,6}$"
+              },
+              "evidence": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "operator_goal",
+                      "planner_frame",
+                      "retained_transcript"
+                    ]
+                  },
+                  "source_id": {
+                    "type": "string"
+                  },
+                  "start_ms": {
+                    "type": "integer"
+                  },
+                  "end_ms": {
+                    "type": "integer"
+                  },
+                  "cue": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "source_id",
+                  "start_ms",
+                  "end_ms",
+                  "cue"
+                ]
+              }
+            },
+            "required": [
+              "x",
+              "y",
+              "width",
+              "height",
+              "fontsize",
+              "start_frame",
+              "end_frame",
+              "text",
+              "position",
+              "kind",
+              "shot_id",
+              "evidence"
+            ]
+          }
+        },
+        "limitations": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "render_sha256": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "plan_sha256": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "font_sha256": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "style_sha256": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "version",
+        "title",
+        "sections",
+        "proofs",
+        "cards",
+        "limitations",
+        "render_sha256",
+        "plan_sha256",
+        "font_sha256",
+        "style_sha256"
+      ]
     }
   },
   "required": [

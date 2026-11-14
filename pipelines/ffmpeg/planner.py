@@ -47,7 +47,7 @@ _RESPONSE_SCHEMA = {
             'properties': {'source_id': {'type': 'string'},
                            'raw_start_ms': {'type': 'integer', 'minimum': 0},
                            'raw_end_ms': {'type': 'integer', 'minimum': 0},
-                           'reason': {'type': 'string', 'minLength': 1}, 'subject_tags': {'type':'array','maxItems':3,'uniqueItems':True,'items':{'enum':list(semantics.SUBJECTS)}}, 'semantic_labels': {'type':'array','maxItems':5,'uniqueItems':True,'items':{'enum':['people','action','scenic_wide','interior','screen']}}}}},
+                           'reason': {'type': 'string', 'minLength': 1}, 'overlay_section': {'type':'integer','minimum':0,'maximum':7}, 'overlay_evidence': {'enum':['costumes','parade','shops','pool','resort','red_rocks']}, 'subject_tags': {'type':'array','maxItems':3,'uniqueItems':True,'items':{'enum':list(semantics.SUBJECTS)}}, 'semantic_labels': {'type':'array','maxItems':5,'uniqueItems':True,'items':{'enum':['people','action','scenic_wide','interior','screen']}}}}},
         'coverage': {'type': 'object', 'additionalProperties': False,
                      'required': ['status', 'limitations'],
                      'properties': {'status': {'enum': ['full', 'partial']},
@@ -383,7 +383,7 @@ def _reconstruct(ctx, analysis, intent, response, mode):
                 sources=deepcopy(analysis['sources']), segments=[], coverage=deepcopy(response['coverage']),
                 exclusions=deepcopy(analysis.get('exclusions', [])))
     for index, segment in enumerate(response['segments'], 1):
-        spec['segments'].append(dict({k:v for k,v in segment.items() if k not in ('semantic_labels','subject_tags')}, segment_id=f'seg-{index:03d}', render_start_ms=None, render_end_ms=None))
+        spec['segments'].append(dict({k:v for k,v in segment.items() if k not in ('semantic_labels','subject_tags','overlay_section','overlay_evidence')}, segment_id=f'seg-{index:03d}', render_start_ms=None, render_end_ms=None))
     limitations = spec['coverage']['limitations']
     actual = sum(s['raw_end_ms'] - s['raw_start_ms'] for s in spec['segments'])
     if actual > intent.target_duration_ms:
@@ -412,6 +412,7 @@ def plan_teaser(ctx: EpisodeContext, analysis: dict, *, provider=_DEFAULT_PROVID
         except ProviderError:
             provider, cause = None, 'Provider configuration failed'
     spec = None
+    rows = []
     candidates = _local_candidates(ctx, analysis) if _visual_only(analysis) or teaser_edit.enabled(analysis) else None
     if provider is not None:
         try:
@@ -420,10 +421,13 @@ def plan_teaser(ctx: EpisodeContext, analysis: dict, *, provider=_DEFAULT_PROVID
                 payload = dict(goal=ctx.goal, constraints=dict(target_duration_ms=intent.target_duration_ms, aspect_ratio=intent.aspect_ratio),
                     candidates=rows,response_schema=_RESPONSE_SCHEMA)
                 if teaser_edit.enabled(analysis):payload['duration_evidence']=dict(teaser_edit.duration_evidence(analysis,candidates),shortlist_duration_ms=teaser_edit.duration_evidence(analysis,rows)['usable_short_windows_ms'])
+                from .overlays import active,requested
+                if active(ctx):payload['overlay_sections']=requested(ctx)[1]
                 if retry_fix is not None:payload['fix_instruction']=str(retry_fix)[:160]
                 # Cache only validated source-backed decisions, never media or credentials.
                 from .evaluator import footage_fingerprint
                 identity=dict(footage=footage_fingerprint(analysis['sources']),goal=ctx.goal,provider=getattr(provider,'provider',None),model=getattr(provider,'model',None),protocol='compact-planner-7-grounded-subjects-crop-closing-v2',transcription_status=analysis.get('transcription_status'),candidates=rows,fix=retry_fix)
+                if active(ctx):identity.update(overlay_protocol='goal-overlays-1',overlay_sections=requested(ctx)[1])
                 baseline=parse_goal(ctx.goal)
                 if (intent.target_duration_ms,intent.aspect_ratio)!=(baseline.target_duration_ms,baseline.aspect_ratio):
                     identity.update(protocol='compact-planner-10-baseline-rank-explicit-settings-closing-v2',target_duration_ms=intent.target_duration_ms,aspect_ratio=intent.aspect_ratio)
@@ -441,7 +445,7 @@ def plan_teaser(ctx: EpisodeContext, analysis: dict, *, provider=_DEFAULT_PROVID
                     except (OSError,ValueError,TypeError,KeyError,StageError,ValidationError):pass
                 hit=data is not None
                 if not hit:
-                    response = provider.complete_json(system=_SYSTEM+' Select only intervals wholly inside the supplied candidates. Tile labels map to candidate ids. Keep each reason <=160 characters.',prompt=json.dumps(payload),images=images,
+                    response = provider.complete_json(system=_SYSTEM+(' For overlays, optionally add overlay_section (zero-based supplied section index) and overlay_evidence (costumes/parade/shops/pool/resort/red_rocks) ONLY when the selected in-window tile shows that activity; omit uncertain assignments. Supplied venue names are operator context, not inferred location proof.' if active(ctx) else '')+' Select only intervals wholly inside the supplied candidates. Tile labels map to candidate ids. Keep each reason <=160 characters.',prompt=json.dumps(payload),images=images,
                         role='planner',episode_dir=ctx.episode_dir,max_output_tokens=1024)
                     data=semantics.normalize_tags(response.data)
                     _check_candidate_mapping(data,rows)
@@ -471,6 +475,8 @@ def plan_teaser(ctx: EpisodeContext, analysis: dict, *, provider=_DEFAULT_PROVID
         data = _pace_local_visual_response(analysis, _fallback(fallback_analysis, intent, cause))
         data = teaser_edit.complete(analysis,intent,data,candidates or []) if teaser_edit.enabled(analysis) else _complete_visual_duration(analysis, intent, data, candidates or [])
         spec = _reconstruct(ctx, analysis, intent, data, 'deterministic')
+    from .overlays import attach
+    attach(ctx,spec,data,rows)
     validate_narrative(spec, analysis)
     atomic_write_json(Path(ctx.episode_dir) / 'narrative-spec.json', spec)
     return spec

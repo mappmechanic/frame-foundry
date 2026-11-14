@@ -469,7 +469,14 @@ def run_gates(episode_dir):
         checks['contact_sheet'] = check('contact_sheet', 'pass', None, dict(size=dims, bytes=sheet.stat().st_size))
     except Exception:
         checks['contact_sheet'] = check('contact_sheet', 'fail', 'Frame-boundary contact-sheet.jpg missing or undecodable')
+    if spec and spec.get('overlays'):
+        from .overlays import verify
+        try:
+            overlay_checks=verify(spec,Path(ctx['render_path']),[s['timeline_start_ms'] for s in shots[1:]],render['duration_ms'])
+        except Exception:overlay_checks=[dict(name='overlay_render_binding',status='fail',reason='Overlay verification unavailable')]
+        for c in overlay_checks:checks[c['name']]=check(c['name'],c['status'],c['reason'])
     ordered = [checks[name] for name in CHECK_NAMES]
+    ordered.extend(c for n,c in checks.items() if n.startswith('overlay_'))
     if 'voiceover_integrity' in checks:ordered.append(checks['voiceover_integrity'])
     return dict(passed=all(c['status'] == 'pass' for c in ordered), checks=ordered, context=ctx,
                 limitations=limitations)

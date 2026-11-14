@@ -66,6 +66,7 @@ def response_schema(shot_ids):
             'evidence': {'type': 'object', 'additionalProperties': False, 'required': CRITERIA,
                          'properties': {c: {'type': 'array', 'minItems': 1, 'maxItems': 40, 'items': ids}
                                         for c in CRITERIA}},
+            'overlay_fit': {'type': 'object', 'additionalProperties': False, 'required': ['status', 'evidence', 'reason'], 'properties': {'status': {'enum': ['pass', 'fail', 'unavailable']}, 'evidence': {'type': 'array', 'maxItems': 40, 'items': {'type': 'string', 'pattern': '^shot-[0-9]{2,6}$'}}, 'reason': {'type': 'string', 'maxLength': 200}}},
             'weakest_shot': ids,
             'fix_instruction': {'type': 'string', 'minLength': 1, 'maxLength': 160},
             'verdict': {'enum': ['pass', 'fail']},
@@ -102,7 +103,7 @@ def build_judge_sheet(video_path, shots, output, *, render_w, render_h):
     sheet = Image.new('RGB', (cols * tw, rows * tile_h), 'black')
     with tempfile.TemporaryDirectory(prefix='eval-sheet-') as tmp:
         for i, shot in enumerate(shots):
-            mid = (shot['timeline_start_ms'] + shot['timeline_end_ms']) / 2000
+            mid = shot.get('overlay_sample_seconds',(shot['timeline_start_ms'] + shot['timeline_end_ms']) / 2000)
             frame = Path(tmp) / f'{i}.png'
             subprocess.run(['ffmpeg', '-y', '-v', 'error', '-nostdin', '-ss', f'{mid:.3f}', '-i', str(video_path),
                             '-frames:v', '1', '-vf', f'scale={tw}:{th}', '-threads', '1', str(frame)],
@@ -187,11 +188,12 @@ def _scored(result, j, *, cache_hit, provider, model, reason=None):
                 weakest_shot=result['weakest_shot'], fix_instruction=result['fix_instruction'],
                 verdict=result['verdict'], unsupported_goal=result['unsupported_goal'],
                 limitations=result['limitations'], cache_hit=cache_hit, reason=reason,
-                provider=provider, model=model, prompt_version=PROMPT_VERSION, J=round(j, 6))
+                provider=provider, model=model, prompt_version=PROMPT_VERSION, J=round(j, 6),
+                **({'overlay_fit':result['overlay_fit']} if 'overlay_fit' in result else {}))
 
 
 def run_judge(*, episode_dir, evals_root, provider, goal, shots, duration_ms, aspect_ratio,
-              render_path, render_hash, footage_hash, render_size):
+              render_path, render_hash, footage_hash, render_size,overlays=None):
     """Return a judge dict (with key ``J``). Caller guarantees all gates passed."""
     if provider is None:
         return unavailable('No LLM provider configured; judge skipped with zero calls')
@@ -201,6 +203,7 @@ def run_judge(*, episode_dir, evals_root, provider, goal, shots, duration_ms, as
         return unavailable('Judge evidence incomplete (shots, render or footage hash)', provider=pname, model=model)
     shot_ids = [s['shot_id'] for s in shots]
     key = cache_key(footage_hash=footage_hash, goal=goal, render_hash=render_hash, provider=pname, model=model)
+    if overlays:key=hashlib.sha256((key+str(overlays.get('plan_sha256'))).encode()).hexdigest()
     cache_path = Path(evals_root) / '.inference-cache' / 'judge' / f'{key}.json'
     cached = _load_cache(cache_path, key, shot_ids) if cache_path.is_file() else None
     guard = Path(episode_dir) / GUARD_NAME
@@ -211,6 +214,7 @@ def run_judge(*, episode_dir, evals_root, provider, goal, shots, duration_ms, as
             return unavailable('Episode used its judge on a different render; changed final J and Q unavailable',provider=pname,model=model)
     if cached:
         entry, result, j = cached
+        if overlays:result.setdefault('overlay_fit',dict(status='unavailable',evidence=[],reason='Cached Judge did not return overlay fit'))
         scored=_scored(result,j,cache_hit=True,provider=pname,model=model,reason='Validated cache hit; historical cost not re-charged')
         scored['historical_usage']=entry.get('historical_usage')
         return scored
@@ -238,7 +242,12 @@ def run_judge(*, episode_dir, evals_root, provider, goal, shots, duration_ms, as
         handle.flush()
         os.fsync(handle.fileno())
     try:
-        sheet = build_judge_sheet(render_path, shots, Path(episode_dir) / SHEET_NAME,
+        sheet_shots=[dict(s) for s in shots]
+        if overlays:
+            for s in sheet_shots:
+                card=next((c for c in overlays['cards'] if c['shot_id']==s['shot_id']),None)
+                if card:s['overlay_sample_seconds']=(card['start_frame']+6+card['end_frame']-5)/60
+        sheet = build_judge_sheet(render_path, sheet_shots, Path(episode_dir) / SHEET_NAME,
                                   render_w=render_size[0], render_h=render_size[1])
     except Exception:
         _atomic_json(guard, dict(record, outcome='sheet_failed_no_dispatch'))
@@ -248,7 +257,9 @@ def run_judge(*, episode_dir, evals_root, provider, goal, shots, duration_ms, as
                    edit=projection(goal, shots, duration_ms, aspect_ratio),
                    image='One tiled sheet; tiles in shot order, each labelled with shot_id.',
                    response_schema=response_schema(shot_ids))
-    kwargs = dict(system=SYSTEM, prompt=json.dumps(payload), images=[Path(sheet['path'])], role='judge',
+    if overlays:payload['requested_sections']=overlays['sections']
+    if overlays:payload['overlays']=[{k:c[k] for k in ('text','shot_id','start_frame','end_frame')} for c in overlays['cards']]
+    kwargs = dict(system=SYSTEM+(' Also return overlay_fit with status pass/fail/unavailable, supplied-shot evidence ids, and reason <=200 characters: does the burned-in text agree with the Goal and visible associated scene? Supplied location names are operator context, not independent geographic proof. Do not change the six rubric scores or weights solely to add this check.' if overlays else ''), prompt=json.dumps(payload), images=[Path(sheet['path'])], role='judge',
                   episode_dir=Path(episode_dir), max_output_tokens=MAX_OUTPUT_TOKENS)
     try:
         if 'temperature' in inspect.signature(provider.complete_json).parameters:
@@ -270,6 +281,9 @@ def run_judge(*, episode_dir, evals_root, provider, goal, shots, duration_ms, as
     except Exception:
         _atomic_json(guard, dict(record, outcome='invalid_response'))
         return unavailable('Judge response failed strict rubric validation', status='failed', provider=pname, model=model)
+    if overlays:
+        result.setdefault('overlay_fit',dict(status='unavailable',evidence=[],reason='Judge did not return overlay fit'))
+        if (result['overlay_fit']['status']=='pass' and not result['overlay_fit']['evidence']) or any(s not in shot_ids for s in result['overlay_fit']['evidence']):result['overlay_fit']=dict(status='unavailable',evidence=[],reason='Overlay fit cites unknown shots')
     usage = getattr(response, 'usage', None) or {}
     _atomic_json(cache_path, dict(cache_key=key, prompt_version=PROMPT_VERSION, created_at=record['created_at'],
                                   provider=pname, model=model, response=getattr(response, 'data'),

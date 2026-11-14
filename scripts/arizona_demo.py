@@ -15,7 +15,8 @@ import zipfile
 
 ARIZONA_BUDGET_USD = Decimal('0.10')
 
-GOAL = 'Create a teaser from this raw family-trip footage that highlights the important moments of the trip'
+GOAL = 'Things to do in Sedona with Kids'
+SECTIONS = ['Halloween in Uptown Sedona','Hilton Sedona Resort at Bell Rock']
 
 
 def fetch(root):
@@ -58,6 +59,7 @@ def main(argv=None):
     parser.add_argument('--evals-root',type=Path)
     parser.add_argument('--no-planner-retry',action='store_true')
     parser.add_argument('--repair-from')
+    parser.add_argument('--overlays',action=argparse.BooleanOptionalAction,default=None)
     parser.add_argument('--voiceover',action='store_true')
     parser.add_argument('--keep-work',action='store_true')
     parser.add_argument('--fetch-only', action='store_true')
@@ -76,6 +78,8 @@ def main(argv=None):
         print(footage)
         return 0
     command = [sys.executable, '-m', 'pipelines.ffmpeg.cli', 'run', '--footage-dir', str(footage), '--goal', GOAL,'--asr-provider',args.asr_provider]
+    for section in SECTIONS:command += ['--section',section]
+    if args.overlays is not None:command += ['--overlays' if args.overlays else '--no-overlays']
     if args.episode: command += ['--episode', args.episode]
     if args.episodes_root: command += ['--episodes-root', str(args.episodes_root)]
     if args.visual_only: command += ['--visual-only']
