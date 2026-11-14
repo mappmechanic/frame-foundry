@@ -11,6 +11,10 @@ from .contracts import StageError
 
 _TIMEOUT = 600
 
+def output_frames(duration):
+    """Nearest nonempty 30fps clip length, shared with independent QA mapping."""
+    return max(1, int(math.floor(duration * 30 + .5)))
+
 
 def _run(args):
     try:
@@ -137,7 +141,7 @@ def render_timeline(timeline, candidate_path, *, episode_dir):
     ranges = timeline_ranges(timeline, episode_dir=episode_dir)
     candidate = Path(candidate_path)
     candidate.parent.mkdir(parents=True, exist_ok=True)
-    pieces, cut_times, cursor = [], [], 0
+    pieces, durations_us, cut_times, cursor_frames = [], [], [], 0
     for index, interval in enumerate(ranges):
         path = interval['path']
         info = probe_media(path)
@@ -149,13 +153,13 @@ def render_timeline(timeline, candidate_path, *, episode_dir):
         end = start + interval['duration']
         # Round each clip to the fixed 30fps output grid, then use that same
         # duration for audio and output mapping; do not accumulate AAC priming.
-        frames = max(1, int(math.floor(interval['duration'] * 30 + .5)))
+        frames = output_frames(interval['duration'])
         duration = frames / 30
         video = (f'[0:v:0]trim=start={start:.9f}:end={end:.9f},'
                  f'setpts=PTS-({start:.9f})/TB,'
                  f'scale={width}:{height}:force_original_aspect_ratio=decrease:force_divisible_by=2,'
                  f'pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,'
-                 f'fps=30,tpad=stop_mode=clone:stop_duration={duration:.9f},'
+                 f'fps=30:start_time=0,tpad=stop_mode=clone:stop_duration={duration:.9f},'
                  f'trim=duration={duration:.9f},format=yuv420p[v]')
         args = _ffmpeg() + ['-ss', f'{interval["start"]:.9f}', '-copyts', '-i', str(path)]
         if has_audio:
@@ -166,19 +170,26 @@ def render_timeline(timeline, candidate_path, *, episode_dir):
             args += ['-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=stereo']
             audio = f'[1:a:0]atrim=duration={duration:.9f},asetpts=PTS-STARTPTS[a]'
         # Lossless PCM in intermediate files avoids AAC encoder delay at cuts.
-        piece = candidate.parent / f'cut-{index + 1:03d}.mkv'
+        # MOV preserves the exact 30fps video time base alongside PCM audio.
+        # Matroska rounds PTS to milliseconds; stream-copying those into MP4
+        # produces alternating 33/34ms frames and a fractional average rate.
+        piece = candidate.parent / f'cut-{index + 1:03d}.mov'
         _run(args + ['-filter_complex', video + ';' + audio, '-map', '[v]', '-map', '[a]',
                     '-t', f'{duration:.9f}', '-c:v', 'libx264', '-preset', 'ultrafast',
                     '-crf', '20', '-pix_fmt', 'yuv420p', '-threads', '2',
                     '-c:a', 'pcm_s16le', '-ar', '48000', '-ac', '2', str(piece)])
         pieces.append(piece)
+        durations_us.append(round((cursor_frames+frames)*1000000/30)-round(cursor_frames*1000000/30))
         if index:
-            cut_times.append(round(cursor * 1000))
-        cursor += duration
+            cut_times.append(round(cursor_frames * 1000 / 30))
+        cursor_frames += frames
     manifest = candidate.parent / 'concat.txt'
     # Generated basenames only: no source filename is interpolated into concat syntax.
-    manifest.write_text(''.join(f"file '{p.name}'\n" for p in pieces))
-    joined = candidate.parent / 'joined.mkv'
+    # Override container duration rounding at each cut; rounded cumulative
+    # microsecond boundaries prevent concat offset drift over many clips.
+    manifest.write_text(''.join(f"file '{p.name}'\nduration {us/1000000:.6f}\n"
+                                for p,us in zip(pieces,durations_us)))
+    joined = candidate.parent / 'joined.mov'
     _run(_ffmpeg() + ['-f', 'concat', '-safe', '1', '-i', str(manifest),
                       '-map', '0:v:0', '-map', '0:a:0', '-c', 'copy', str(joined)])
     _normalize(joined, candidate)

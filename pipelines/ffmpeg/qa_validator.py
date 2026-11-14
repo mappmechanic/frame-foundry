@@ -8,12 +8,45 @@ if __package__ in (None,''):
     __package__='pipelines.ffmpeg'
 from pathlib import Path
 import argparse,copy,json,math,re,time
+from fractions import Fraction
 import opentimelineio as otio
 from .contracts import *
 from .proxy import probe,run
 from .contact_sheet import build_contact_sheet
 from .assembler import pad_word_interval
 from .goal_judge import judge_goal
+from .render import output_frames
+
+_TIMELINE_TOLERANCE_MS = 1.0
+
+def verify_constant_fps(path, video):
+    """Verify decoded presentation timestamps, not rounded/aggregate rate tags."""
+    try:
+        data=json.loads(run(['ffprobe','-v','error','-select_streams','v:0',
+            '-show_frames','-show_entries','frame=best_effort_timestamp,pkt_duration',
+            '-of','json',str(path)]).stdout)
+        tick=Fraction(video['time_base'])
+        if tick<=0:raise ValueError('nonpositive time base')
+        tolerance=min(Fraction(1,1000),max(tick,Fraction(1,1000000)))
+        frames=data['frames']
+        if len(frames)<2:raise ValueError('need at least two decoded frame timestamps')
+        stamps=[int(f['best_effort_timestamp'])*tick for f in frames]
+        for index,(previous,current) in enumerate(zip(stamps,stamps[1:]),1):
+            delta=current-previous
+            expected=stamps[0]+Fraction(index,30)
+            if delta<=0 or abs(delta-Fraction(1,30))>tolerance or abs(current-expected)>tolerance:
+                return False,(f'Expected constant 30 fps (33.333333ms/frame); frame {index} '
+                    f'observed interval {float(delta)*1000:.6f}ms, grid drift '
+                    f'{float(current-expected)*1000:.6f}ms; tolerance {float(tolerance)*1000:.6f}ms')
+        for index,frame in enumerate(frames):
+            if frame.get('pkt_duration') is not None:
+                duration=int(frame['pkt_duration'])*tick
+                if abs(duration-Fraction(1,30))>tolerance:
+                    return False,f'Expected 33.333333ms frame duration; frame {index} observed {float(duration)*1000:.6f}ms'
+        return True,None
+    except Exception as exc:
+        return False,f'Cannot verify constant 30 fps timestamps: {exc}; re-render CFR and probe decoded video frames'
+
 
 def measure_audio(path):
     result=run(['ffmpeg','-hide_banner','-i',str(path),'-af','loudnorm=I=-14:TP=-1:LRA=11:print_format=json','-f','null','-'])
@@ -31,53 +64,55 @@ def validate_candidate(ctx,result,spec,*,attempts=None,judge_provider=_DEFAULT):
     report.update(interpretation=spec['interpretation'],assumptions=list(spec['assumptions']),coverage=copy.deepcopy(spec['coverage']),exclusions=spec['exclusions'],
                   target_duration_ms=spec['target_duration_ms'],attempts=attempts or [],timeline_path=str(result.timeline_path.relative_to(ctx.episode_dir)),limitations=list(result.limitations))
     checks=[]
-    def check(name,passed,reason=None):checks.append(dict(name=name,status='pass' if passed else 'fail',reason=reason if not passed else None,required=True))
-    try:validate_narrative(spec);check('narrative_schema',True)
-    except (StageError,ValueError):check('narrative_schema',False,'Narrative contract invalid')
+    def check(name,passed,reason):checks.append(dict(name=name,status='pass' if passed else 'fail',reason=reason if not passed else None,required=True))
+    try:validate_narrative(spec);check('narrative_schema',True,None)
+    except (StageError,ValueError) as exc:check('narrative_schema',False,f'Narrative contract invalid: {exc}')
     try:
         info=probe(result.candidate_path);data=info['data'];v=info['video'];a=next((s for s in data['streams'] if s['codec_type']=='audio'),{})
-        report['actual_duration_ms']=info['duration_ms'];check('readable_media',True)
+        report['actual_duration_ms']=info['duration_ms'];check('readable_media',True,None)
         size=(1080,1920) if spec['aspect_ratio']=='9:16' else (1920,1080)
-        check('output_encoding',v['codec_name']=='h264' and a.get('codec_name')=='aac')
-        check('output_dimensions',(v['width'],v['height'])==size)
-        from fractions import Fraction
-        check('output_fps',Fraction(v.get('avg_frame_rate','0/1'))==30 and Fraction(v.get('r_frame_rate','0/1'))==30)
-    except Exception:check('readable_media',False,'Output cannot be probed');info=None
+        check('output_encoding',v.get('codec_name')=='h264' and a.get('codec_name')=='aac',f"Expected H.264/AAC; observed video={v.get('codec_name')}, audio={a.get('codec_name')}; re-render delivery codecs")
+        check('output_dimensions',(v.get('width'),v.get('height'))==size,f"Expected {size[0]}x{size[1]}; observed {v.get('width')}x{v.get('height')}; re-render requested aspect ratio")
+        fps_ok,fps_reason=verify_constant_fps(result.candidate_path,v)
+        check('output_fps',fps_ok,fps_reason)
+    except Exception as exc:check('readable_media',False,f'Output cannot be probed: {exc}; inspect candidate media');info=None
     try:
         metrics=measure_audio(result.candidate_path);report.update(metrics)
-        check('loudness',metrics['integrated_lufs'] is not None and -15<=metrics['integrated_lufs']<=-13,'LUFS must be finite and within [-15,-13]')
-        check('true_peak',metrics['true_peak_dbtp'] is not None and metrics['true_peak_dbtp']<=-1,'True peak must be <= -1 dBTP')
-    except Exception:check('loudness',False,'Audio measurement unavailable');check('true_peak',False,'Peak measurement unavailable')
+        check('loudness',metrics['integrated_lufs'] is not None and -15<=metrics['integrated_lufs']<=-13,f"Expected finite LUFS in [-15,-13]; observed {metrics['integrated_lufs']}; normalize audio")
+        check('true_peak',metrics['true_peak_dbtp'] is not None and metrics['true_peak_dbtp']<=-1,f"Expected true peak <= -1 dBTP; observed {metrics['true_peak_dbtp']}; reduce encoded peak and remeasure")
+    except Exception as exc:check('loudness',False,f'Audio measurement unavailable: {exc}; inspect audio stream');check('true_peak',False,f'Peak measurement unavailable: {exc}; inspect audio stream')
     try:
         timeline=otio.adapters.read_from_file(str(result.timeline_path));video=next(t for t in timeline.tracks if t.name=='V1')
-        expected_ids=[s['segment_id'] for s in spec['segments']];seen=[];cursor=0;cuts=[];sources={s['source_id']:s for s in spec['sources']}
+        expected_ids=[s['segment_id'] for s in spec['segments']];seen=[];cursor_frames=0;cuts=[];sources={s['source_id']:s for s in spec['sources']}
         words=read_json(ctx.episode_dir/'transcript.json')['words'] if (ctx.episode_dir/'transcript.json').exists() else []
         expected_segments={s['segment_id']:s for s in spec['segments']}
         for clip in video:
-            if cursor:cuts.append(round(cursor))
+            if cursor_frames:cuts.append(round(cursor_frames*1000/30))
             sid=clip.metadata['source_id'];source=sources[sid]
-            if Path(clip.media_reference.target_url).resolve()!=Path(source['path']).resolve() or not Path(source['path']).is_file():raise ValueError('Source mismatch')
+            if Path(clip.media_reference.target_url).resolve()!=Path(source['path']).resolve() or not Path(source['path']).is_file():raise ValueError(f'Source {sid}: expected existing original {source["path"]}; observed {clip.media_reference.target_url}')
             start=clip.source_range.start_time.to_seconds()*1000;end=start+clip.source_range.duration.to_seconds()*1000
-            if not 0<=start<end<=source['duration_ms']+1:raise ValueError('Range')
+            if not (math.isfinite(start) and math.isfinite(end) and -_TIMELINE_TOLERANCE_MS<=start<end<=source['duration_ms']+_TIMELINE_TOLERANCE_MS):raise ValueError(f'Source {sid}: expected range within [0,{source["duration_ms"]}]ms (1ms tolerance); observed [{start},{end}]ms')
             selected_ids=list(clip.metadata['selection_ids']);seen.extend(selected_ids)
             for segment_id in selected_ids:
                 segment=expected_segments[segment_id]
-                if segment['source_id']!=sid or not start<=segment['render_start_ms']<segment['render_end_ms']<=end+1:raise ValueError('Selection mapping')
+                if segment['source_id']!=sid or not start-_TIMELINE_TOLERANCE_MS<=segment['render_start_ms']<segment['render_end_ms']<=end+_TIMELINE_TOLERANCE_MS:raise ValueError(f'Selection {segment_id}: expected source {segment["source_id"]} range [{segment["render_start_ms"]},{segment["render_end_ms"]}]ms contained in clip; observed source {sid} range [{start},{end}]ms (1ms tolerance)')
                 chosen=[w for w in words if w['source_id']==sid and w['start_ms']<=segment['raw_end_ms'] and segment['raw_start_ms']<=w['end_ms']]
                 if chosen:
                     x,y=pad_word_interval(min(w['start_ms'] for w in chosen),max(w['end_ms'] for w in chosen),source['duration_ms'],[w for w in words if w['source_id']==sid])
-                    if start>x+1 or end<y-1:raise ValueError('Unprotected spoken cut')
+                    if start>x+_TIMELINE_TOLERANCE_MS or end<y-_TIMELINE_TOLERANCE_MS:raise ValueError(f'Selection {segment_id}: expected protected speech range [{x},{y}]ms; observed clip [{start},{end}]ms (1ms tolerance)')
                     if min(w['start_ms'] for w in chosen)<80 or max(w['end_ms'] for w in chosen)+120>source['duration_ms']:
                         report['limitations'].append('Full word padding unavailable at source boundary')
-            cursor+=end-start
-        check('timeline_and_padding',seen==expected_ids and cuts==result.cut_times_ms,'Timeline ranges/order/padding mismatch')
-        check('render_duration',info is not None and abs(info['duration_ms']-cursor)<=150,'Render disagrees with actual saved timeline')
-        check('goal_duration',info is not None and (abs(info['duration_ms']-spec['target_duration_ms'])<=1000 or (spec['coverage']['status']=='partial' and bool(spec['coverage']['limitations']))),'Unexplained duration deviation')
-    except Exception:check('timeline_and_padding',False,'Invalid timeline or source bounds/padding');check('render_duration',False,'Timeline unavailable')
+            cursor_frames+=output_frames(clip.source_range.duration.to_seconds())
+        cuts_ok=len(cuts)==len(result.cut_times_ms) and all(abs(a-b)<=_TIMELINE_TOLERANCE_MS for a,b in zip(cuts,result.cut_times_ms))
+        check('timeline_and_padding',seen==expected_ids and cuts_ok,f'Expected selection order {expected_ids} and 30fps cuts {cuts}ms; observed order {seen} and cuts {result.cut_times_ms}ms (1ms tolerance)')
+        cursor=cursor_frames*1000/30
+        check('render_duration',info is not None and abs(info['duration_ms']-cursor)<=150,f"Expected saved timeline on 30fps grid {cursor:.6f}ms ±150ms; observed {info['duration_ms'] if info else None}ms; inspect render cuts")
+        check('goal_duration',info is not None and (abs(info['duration_ms']-spec['target_duration_ms'])<=1000 or (spec['coverage']['status']=='partial' and bool(spec['coverage']['limitations']))),f"Expected target {spec['target_duration_ms']}ms ±1000ms or documented partial coverage; observed {info['duration_ms'] if info else None}ms")
+    except Exception as exc:check('timeline_and_padding',False,f'Invalid timeline/source/order/padding: {exc}; repair saved timeline');check('render_duration',False,f'Timeline duration unavailable: {exc}')
     try:
         build_contact_sheet(result.candidate_path,result.cut_times_ms,ctx.episode_dir/'contact-sheet.jpg')
-        report['contact_sheet_path']='contact-sheet.jpg';check('contact_sheet',True)
-    except Exception:check('contact_sheet',False,'Cut-boundary evidence unavailable')
+        report['contact_sheet_path']='contact-sheet.jpg';check('contact_sheet',True,None)
+    except Exception as exc:check('contact_sheet',False,f'Cut-boundary evidence unavailable: {exc}; regenerate contact sheet')
     report['checks']=checks;technical=all(c['status']=='pass' for c in checks)
     if technical:
         judge=judge_goal(ctx,spec,result,words=words) if judge_provider is _DEFAULT else judge_goal(ctx,spec,result,provider=judge_provider,words=words)
@@ -93,11 +128,11 @@ def main(argv=None):
     parser=argparse.ArgumentParser();parser.add_argument('--episode-dir',type=Path,required=True);args=parser.parse_args(argv);root=args.episode_dir.resolve()
     previous=read_json(root/'qa-report.json');spec=read_json(root/'narrative-spec.json')
     ctx=EpisodeContext(spec['episode_id'],root,spec['goal'],fixture_mode=previous.get('fixture_mode',False))
-    timeline=otio.adapters.read_from_file(str(root/'timeline.otio'));track=next(t for t in timeline.tracks if t.name=='V1');cursor=0;cuts=[]
+    timeline=otio.adapters.read_from_file(str(root/'timeline.otio'));track=next(t for t in timeline.tracks if t.name=='V1');cursor_frames=0;cuts=[]
     for clip in track:
-        if cursor:cuts.append(round(cursor))
-        cursor+=clip.source_range.duration.to_seconds()*1000
-    result=AssemblyResult(ctx.episode_id,root/'finished.mp4',root/'timeline.otio',root/'narrative-spec.json',cuts,round(cursor))
+        if cursor_frames:cuts.append(round(cursor_frames*1000/30))
+        cursor_frames+=output_frames(clip.source_range.duration.to_seconds())
+    result=AssemblyResult(ctx.episode_id,root/'finished.mp4',root/'timeline.otio',root/'narrative-spec.json',cuts,round(cursor_frames*1000/30))
     report=validate_candidate(ctx,result,spec,attempts=previous['attempts'],judge_provider=None)
     report['goal_judge']=previous.get('goal_judge',unavailable_judge());report['elapsed_seconds']=previous['elapsed_seconds']
     if report['passed'] and report['goal_judge']['status']=='scored' and report['goal_judge']['score']<60:
