@@ -51,3 +51,11 @@ Run `python -m pytest -q tests/test_curated_skills_docs.py` for local routing,
 licenses, links, availability and policy wording checks. These are documentation
 regressions, not visual inspection or end-to-end policy verification. Existing
 assembler/overlay/audio/QA regression tests cover the unchanged current engine.
+
+## Knowledge Base publication
+
+[SOP-03 editable document](https://factory.8090.ai/project/a54860bf-bf30-42d7-b6a8-a08af85c454c/knowledge-base/af423584-7fff-499f-83e6-3ea1cb5229c2)
+(resource ID `af423584-7fff-499f-83e6-3ea1cb5229c2`) publishes the SOP from
+`a69f14c` with pinned repository links. Its initial content is pending review.
+WO-17 links the resource; later runtime changes must update availability honestly,
+not silently reinterpret this baseline documentation as shipped policy behavior.
