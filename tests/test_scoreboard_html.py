@@ -248,8 +248,12 @@ def test_output_protects_artifacts_inputs_symlinks_and_mkdir(tmp_path):
         export_html(symlink, 'bad', episodes_root=episodes)
     folder = tmp_path/'folder'
     folder.symlink_to(path.parent, target_is_directory=True)
-    with pytest.raises(ValueError, match='symlinks'):
-        export_html(folder/'o.html', 'bad', episodes_root=episodes)
+    exported=export_html(folder/'o.html', 'resolved parent', episodes_root=episodes)
+    assert exported==path.parent/'o.html' and exported.read_text()=='resolved parent'
+    alias_dir=tmp_path/'artifact-alias'
+    alias_dir.symlink_to(episodes, target_is_directory=True)
+    with pytest.raises(ValueError, match='artifacts'):
+        export_html(alias_dir/'az-0500'/'out.html', 'bad', episodes_root=episodes)
     with pytest.raises(ValueError, match='.html'):
         export_html(tmp_path/'scoreboard.jsonl', 'bad', episodes_root=episodes)
     assert path.read_text() == '<html></html>'
@@ -323,3 +327,22 @@ def test_html_never_initializes_model_provider(report, tmp_path, monkeypatch, ca
     write_jsonl(tmp_path/'scoreboard.jsonl', [report()])
     code, stdout, err = run(['scoreboard', '--html', str(tmp_path/'out.html'), '--evals-root', str(tmp_path)], capsys)
     assert (code, stdout, err) == (0, '', '')
+
+
+def test_presenter_is_first_with_scoped_numbers_and_collapsed_audit(report,tmp_path):
+    artifact(tmp_path,'az-0700')
+    out=render_html([report('az-0700',q=.825,usd=.038)],episodes_root=tmp_path)
+    assert out.index('Presenter view')<out.index('<details>')<out.index('Latest episodes')
+    assert '<summary>Detailed metrics, methods &amp; disclosures</summary>' in out
+    assert '<details open' not in out
+    assert '0.825' in out and '0.0380 USD' in out and '100.0%' in out
+    assert 'median first title coverage' in out and 'not completion' in out
+    assert 'Episodes shipped' in out and 'verified local exports' in out
+
+
+def test_resolved_parent_alias_cannot_overwrite_input(tmp_path):
+    real=tmp_path/'real';real.mkdir();source=real/'x.html';source.write_text('keep')
+    alias=tmp_path/'tmp';alias.symlink_to(real,target_is_directory=True)
+    with pytest.raises(ValueError,match='input'):
+        export_html(alias/'x.html','bad',episodes_root=tmp_path/'episodes',input_paths=[source])
+    assert source.read_text()=='keep'

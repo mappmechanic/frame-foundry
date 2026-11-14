@@ -4,6 +4,7 @@ from __future__ import annotations
 import html
 import math
 import os
+import statistics
 import tempfile
 from pathlib import Path
 
@@ -164,6 +165,28 @@ def _factory_section(factory):
     return ''.join(out)
 
 
+def _presenter(metrics, factory):
+    rows=metrics['rows']
+    by_id={r['episode_id']:r for r in rows}
+    trend=[(eid,by_id[eid]['scores']['Q'] if eid in by_id else None) for eid in TREND_EPISODES]
+    latest=next(((eid,q) for eid,q in reversed(trend) if q is not None),(None,None))
+    timings=[wo['coverage_minutes'] for wo in factory['work_orders'] if wo.get('coverage_minutes') is not None]
+    rate=f"{100*metrics['qa_passed']/metrics['qa_known']:.1f}%" if metrics['qa_known'] else 'N/A'
+    cost=_number(metrics['cost_per_shipped'],4)
+    cost_label='estimated' if metrics['estimated'] else 'recorded'
+    if not metrics['cost_complete']:cost_label='known subtotal · incomplete'
+    cards=[('Latest Q',_number(latest[1]),latest[0] or 'No Q available'),
+           ('AI cost / shipped',cost+' USD',cost_label+' · failed episodes included'),
+           ('Render QA pass rate',rate,f"{metrics['qa_passed']}/{metrics['qa_known']} known episodes"),
+           ('Ticket → PR',_number(statistics.median(timings),1)+' min' if timings else 'N/A','median first title coverage · not completion'),
+           ('Episodes shipped',str(metrics['shipped']),'verified local exports')]
+    return ('<section id="presenter"><h2>Presenter view</h2><div class="cards">'+
+            ''.join('<div class="card"><span class="eyebrow">'+_escape(label)+'</span><div class="value">'+_escape(value)+'</div><p class="note">'+_escape(note)+'</p></div>' for label,value,note in cards)+
+            '</div><p class="q-trend"><strong>Q trend</strong> '+
+            ' → '.join(_escape(eid)+': <strong>'+_number(q)+'</strong>' for eid,q in trend)+
+            '</p></section>')
+
+
 def render_html(reports, *, episodes_root, unreadable_lines=0, input_unavailable=False,
                 assume_manual_minutes_per_episode=None, factory=None, baseline=None):
     """One self-contained document; missing local Mac episodes remain explicit gaps."""
@@ -186,9 +209,11 @@ def render_html(reports, *, episodes_root, unreadable_lines=0, input_unavailable
            'th{font-size:12px;color:#555}a{color:#245f85}svg{display:block;width:100%;max-width:780px;margin:24px 0}'
            'svg text{font:13px system-ui,sans-serif;fill:#555}.grid{stroke:#ddd;fill:none}.trend{stroke:#245f85;stroke-width:2;fill:none}.point{fill:#245f85}'
            '.cards{display:flex;gap:24px;flex-wrap:wrap}.card{flex:1;min-width:220px;padding:20px;background:white;border:1px solid #ddd}'
-           '.value{font-size:28px;font-weight:600;color:#245f85}.eyebrow{color:#555;font-size:12px;letter-spacing:.08em;text-transform:uppercase}'
+           '.value{font-size:38px;font-weight:600;color:#245f85}.eyebrow{color:#555;font-size:12px;letter-spacing:.08em;text-transform:uppercase}'
            '</style></head><body><main><p class="eyebrow">FrameFoundry · generation-time snapshot</p>',
            '<h1>Teaser quality &amp; factory scoreboard</h1>',
+           _presenter(m,factory),
+           '<details><summary>Detailed metrics, methods &amp; disclosures</summary>',
            '<p>Latest validated evaluation per episode. No live Mac data is fabricated; this file updates only when regenerated with local evaluation JSONL and episode artifacts.</p>',
            '<section><h2>Latest episodes</h2>',
            _table(['Episode', 'J', 'Q', 'D', 'Cost USD', 'Cost status', 'Known subtotal USD', 'Q/$',
@@ -230,19 +255,20 @@ def render_html(reports, *, episodes_root, unreadable_lines=0, input_unavailable
         out.append(f'<p>{hours:.3f} hours gross estimated manual editing effort avoided — estimate, assumption: {minutes:g} min manual edit per teaser.</p>')
         out.append(f'<p>Formula: {minutes:g} min × {m["shipped"]} shipped episodes / 60 = {hours:.3f} hours.</p>')
     out.append('<p class="note">Assumes autonomous editing has zero hands-on editing. Excludes preparation, reviews, and debugging. This is an assumption-based gross estimate, not measured labor savings; never per WO and never subtracting machine wall time as engineer labor.</p></section>')
-    out.extend([_factory_section(factory), '</main></body></html>'])
+    out.extend([_factory_section(factory), '</details></main></body></html>'])
     return ''.join(out)
 
 
 def export_html(path, document, *, episodes_root, input_paths=()):
-    """Atomic export; refuse artifact/input aliases and all symlink output paths."""
+    """Atomic export; resolve directory aliases, refuse symlink output files."""
     path = Path(path).absolute()
     try:
         if path.suffix.lower() != '.html':
             raise ValueError('HTML output must end in .html')
-        if any(p.is_symlink() for p in (path, *path.parents)):
+        if path.is_symlink():
             raise ValueError('HTML output symlinks are not allowed')
         resolved = path.resolve()
+        path = resolved
         episode_root = Path(episodes_root).resolve()
         if resolved == episode_root or episode_root in resolved.parents:
             raise ValueError('HTML output cannot overwrite episode artifacts')
