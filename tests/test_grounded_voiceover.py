@@ -86,3 +86,25 @@ def test_tampered_frame_hash_or_interval_fails(tmp_path):
 def test_screen_event_does_not_become_trip_subject():
     spec=dict(segments=[dict(source_id='a',raw_start_ms=0,raw_end_ms=1000,semantic_evidence=dict(source_id='a',method='planner_in_window_tile',frame_time_ms=500,subjects=['night_parade'],labels=['screen']))])
     assert 'parade' not in voiceover.intro_text(spec)
+
+
+def test_complete_mocked_pipeline_speaks_retained_subjects(tmp_path,monkeypatch):
+    import subprocess
+    from tests.fixtures.generate_footage import generate_footage
+    from pipelines.ffmpeg.cli import run_episode
+    from pipelines.ffmpeg import llm_provider
+    footage=tmp_path/'footage';generate_footage(footage)
+    audio=tmp_path/'mock.mp3'
+    subprocess.run(['ffmpeg','-v','error','-y','-f','lavfi','-i','sine=frequency=730:sample_rate=44100:duration=1.2','-c:a','libmp3lame',str(audio)],check=True,capture_output=True)
+    calls=[]
+    def send(url,headers,body,timeout):calls.append(json.loads(body));return 200,audio.read_bytes()
+    monkeypatch.setenv('ELEVENLABS_API_KEY','fake');monkeypatch.setattr(llm_provider,'_transport',send)
+    provider=SubjectProvider(None)
+    report=run_episode(footage,'10 second family-trip teaser',episodes_root=tmp_path/'episodes',episode_id='grounded',provider=provider,transcript_fixture=footage/'transcript-fixture.json',voiceover=True,planner_retry=False)
+    assert report['passed'] and len(calls)==1 and len(provider.calls)==1
+    spec=json.loads((tmp_path/'episodes'/'grounded'/'narrative-spec.json').read_text())
+    assert spec['voiceover']['text']==calls[0]['text']==voiceover.intro_text(spec)
+    assert spec['voiceover']['grounding_version']=='subjects-v1' and len(calls[0]['text'])<90
+    assert any(s.get('semantic_evidence') for s in spec['segments'])
+    evaluation=json.loads((tmp_path/'episodes'/'grounded'/'eval-report.json').read_text())
+    assert next(c for c in evaluation['gates']['checks'] if c['name']=='voiceover_integrity')['status']=='pass'

@@ -395,6 +395,9 @@
         },
         "duck_db": {
           "const": -10
+        },
+        "grounding_version": {
+          "const": "subjects-v1"
         }
       }
     }

@@ -153,3 +153,20 @@ def test_independent_vo_failure_cannot_advertise_delivery(tmp_path,audio,monkeyp
     assert not report['passed'] and report['output_path'] is None
     assert report['error']['code']=='EVAL_VOICEOVER_FAILED'
     assert (tmp_path/'episodes'/'tampered'/'diagnostic.mp4').is_file()
+
+
+def test_original_generic_intro_still_evaluates_as_legacy(tmp_path,audio,monkeypatch):
+    from pipelines.ffmpeg import eval_gates
+    from pipelines.ffmpeg.assembler import build_timeline
+    import opentimelineio as otio
+    spec,analysis,intro,_=prepare(tmp_path,audio,monkeypatch)
+    intro.pop('grounding_version');intro['text']='A few moments from our family trip.\nShared memories, together.'
+    spec['voiceover']=intro
+    timeline,_=build_timeline(spec,analysis)
+    otio.adapters.write_to_file(timeline,str(tmp_path/'timeline.otio'))
+    checks={};eval_gates._voiceover_check(tmp_path,spec,dict(duration_ms=2000),checks)
+    assert checks['voiceover_integrity']['status']=='pass'
+    spec['voiceover']['grounding_version']='subjects-v1'
+    timeline,_=build_timeline(spec,analysis);otio.adapters.write_to_file(timeline,str(tmp_path/'timeline.otio'))
+    checks={};eval_gates._voiceover_check(tmp_path,spec,dict(duration_ms=2000),checks)
+    assert checks['voiceover_integrity']['status']=='fail'

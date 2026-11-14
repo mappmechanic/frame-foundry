@@ -739,7 +739,9 @@ def _voiceover_check(root,spec,render,checks):
         from .voiceover import _hash,intro_text
         from .semantics import validate_evidence
         validate_evidence(spec,root=root)
-        if vo['text']!=intro_text(spec):raise ValueError('VO text differs from retained semantic evidence')
+        legacy={'A few moments from our family trip.\nShared memories, together.','A few highlights from our footage.\nMemories worth revisiting.'}
+        expected={intro_text(spec)} if vo.get('grounding_version') else legacy|{intro_text(spec)}
+        if vo['text'] not in expected:raise ValueError('VO text differs from retained semantic evidence')
         import opentimelineio as otio
         path=(root/vo['path']).resolve()
         timeline=otio.adapters.read_from_file(str(root/'timeline.otio'))

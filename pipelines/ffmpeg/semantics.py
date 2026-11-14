@@ -33,6 +33,8 @@ def attach(spec,data,rows):
                         subjects=list(decision.get('subject_tags',[])),labels=list(decision.get('semantic_labels',[])))
                     break
             if 'semantic_evidence' in segment:break
+    if any(s.get('semantic_evidence') for s in spec['segments']):
+        spec['assumptions'].append('Subject tags are Planner inferences from bounded, crop-matched tiles; frame/hash provenance is not independent semantic recognition.')
     return spec
 
 
