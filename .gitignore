@@ -33,3 +33,6 @@ site/.public-stage-*/
 site/.public-backup/
 site/.encode-*/
 site/.vercel/
+
+# WO-17: upstream inspection only; never ship vendor prompts, media or fonts.
+/_vendor_skills/
