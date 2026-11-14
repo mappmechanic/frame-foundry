@@ -387,7 +387,24 @@ intros remain evaluable under their original unversioned protocol.
 
 ## Local demo UI
 
-From this checkout on your Mac (Python 3.13 setup remains unchanged):
+From this checkout on your Mac with the existing `.venv` (uv, Python 3.13),
+install/update dependencies **without recreating the venv**, load an existing
+`.env` if present, and launch the studio with this one line:
+
+```sh
+uv pip install --python .venv/bin/python -r requirements-dev.txt -e . && (set -a; [ ! -f .env ] || . ./.env; set +a; FRAMEFOUNDRY_LLM_PROVIDER=openai .venv/bin/framefoundry serve --port 8765)
+```
+
+Open `http://127.0.0.1:8765`. FastAPI, uvicorn and multipart uploads are declared
+in both the project runtime dependencies and the standalone dev requirements;
+httpx/TestClient and pytest are declared in dev requirements and the project's
+`test` extra. `uv pip install --python .venv/bin/python -e '.[test]'` is another
+complete install path. Existing core-only venvs skip `tests/test_local_server.py`
+with an explicit install reason when server dependencies are absent; those skips
+are not API-test passes. No automatic media retention is enabled by installation.
+The studio still cleans successful `work/` media by default.
+
+For a fresh/recreated environment (Python 3.13 setup remains unchanged):
 
 ```sh
 make setup

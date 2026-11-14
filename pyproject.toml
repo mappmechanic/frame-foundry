@@ -9,6 +9,9 @@ description = "Deterministic footage-to-clip pipeline with bounded editing judgm
 requires-python = ">=3.10,<3.14"
 dependencies = ["jsonschema==4.25.1", "Pillow==11.3.0", "opentimelineio==0.18.1", "opencv-python-headless==4.12.0.88", "fastapi==0.162.7", "uvicorn==0.54.0", "python-multipart==0.0.33"]
 
+[project.optional-dependencies]
+test = ["pytest==8.3.5", "httpx==0.28.1"]
+
 [project.scripts]
 framefoundry = "pipelines.ffmpeg.cli:main"
 

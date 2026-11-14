@@ -3,6 +3,12 @@ from pathlib import Path
 from types import SimpleNamespace
 import json,shutil,subprocess
 import pytest
+
+# Core pipeline checks remain runnable in an existing Mac venv without studio deps.
+# Missing packages skip this module; incompatible installed packages still fail.
+for dependency in ('fastapi','uvicorn','httpx','python_multipart'):
+    pytest.importorskip(dependency,reason='Install studio/test dependencies: uv pip install --python .venv/bin/python -r requirements-dev.txt -e .',exc_type=ModuleNotFoundError)
+
 from fastapi.testclient import TestClient
 from pipelines.ffmpeg.local_server import create_app
 from pipelines.ffmpeg.contracts import atomic_write_json,EpisodeContext,StageError,failure_report
