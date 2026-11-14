@@ -26,6 +26,25 @@ ignored. No installer, npm/npx command or upstream script was executed. To audit
 read each manifest path at its pinned GitHub commit, compare the full notice hash,
 and check `git check-ignore _vendor_skills/<repo-name>/LICENSE`.
 
+## Current integrated availability (WO-18)
+
+The [production runtime](../PRODUCTION_POLICY.md) implements opt-in `--production`
+behavior in `production.py`, `audio_policy.py`, overlays and QA. Ordinary edits
+remain legacy by default; installing skills is not an enable switch.
+
+| Capability | Current status |
+| --- | --- |
+| Editorial policy | Source-bound hook ordering, exact complete retakes, measured silent-gap removal and explicit visual-only pacing; protection/chronology exceptions disclosed |
+| Authorized music | Optional local bed and output-mapped dialogue/VO ducking; no bed explicitly absent; authorization is operator attestation |
+| Motion/placement | Pillow/FFmpeg analytic 14/120/1 spring, portrait/landscape exclusions and sampled Haar collision checks |
+| Receipts/verification | Strict `editing_policy` config/plan hashes, applied changes and limitations; augmented QA and cut+3 red-zone samples |
+| Saved-plan comparison | Zero new Planner/ASR/TTS calls; optional fresh Judge, matched formats/configurations, both budget reservations and public-safe export |
+| Still unsupported | Remotion/V3 alpha renderer, continuous eye/chin tracking, 112% face-safe punch-ins, semantic qualified-retake merging and cut-1 through cut+3 alpha masking |
+
+Cut+3 contact-sheet sampling is **not** cut+3 alpha-exclusion enforcement. Unknown
+subject geometry is a disclosed limitation, not verified tracking. Real Sedona
+quality gain and authenticated Hydra behavior require separate operator evidence.
+
 ## Availability at ea0887e (not a promise about later parent commits)
 
 | Capability | Status / authoritative evidence |

@@ -9,8 +9,10 @@ description: Preserve dialogue, handle only authorized optional music and verify
 
 Current `pipelines/ffmpeg/assembler.py`, `render.py`, `qa_validator.py`,
 `eval_gates.py` and `contracts.py` are authoritative. Existing cut protection and
-normalization are implemented; optional policy music mixing/ducking is a
-**declared target** owned by parent/WO-18, not enabled by installing this skill.
+normalization are implemented. The [production runtime](../../../docs/PRODUCTION_POLICY.md) invokes `audio_policy.py`
+for optional local mixing/ducking with `--production --music-bed <local-path>
+--music-authorized`; installing this skill does not enable the policy.
+Authorization is operator attestation, not independent license verification.
 See [availability](../../../docs/skills/README.md) and
 [provenance](../../../docs/skills/provenance.json).
 
@@ -24,10 +26,10 @@ See [availability](../../../docs/skills/README.md) and
    With no bed, report **music absent**, retain dialogue and do not download,
    fabricate or synthesize substitute music/SFX. Invalid/unreadable/unauthorized
    music must be refused with an actionable diagnostic, not silently accepted.
-3. For the opt-in target, duck authorized music under retained speech and VO;
+3. For opt-in production, duck authorized music under retained speech and VO;
    use measured/timed activity and audition intelligibility. A universal gain
    value is not evidence of adequate ducking. Do not cut protected words to fit
-   a beat. No unsupported music CLI flag or narrative field is declared here.
+   a beat. Inspect the saved `editing_policy.audio` receipt; do not invent schema fields.
 4. Re-measure **the encoded output**, not only the source or mixer settings.
    Keep the current hard gates: finite **[-15,-13] LUFS** (-14 +/-1), finite
    **true peak <=-1 dBTP**. A recommendation like -16 LUFS from another skill is

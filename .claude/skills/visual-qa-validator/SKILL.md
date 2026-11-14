@@ -9,8 +9,10 @@ description: Verify decoded final-output geometry, boundary masks, readable hold
 
 Validate after assembly with [SOP-03](../../../docs/sops/SOP-03-remotion-sparse-overlays.md).
 `pipelines/ffmpeg/qa_validator.py`, `overlays.py:verify`, `contact_sheet.py` and
-`eval_gates.py` are implemented. This skill's stricter landmark/safety/**cut+3
-exclusion** checks are **declared target** review criteria, not new runtime gates.
+`eval_gates.py` are implemented. The [production runtime](../../../docs/PRODUCTION_POLICY.md) adds `--production`
+configuration/plan, pacing, audio, safe-zone and sampled-face gates plus cut+3
+red-zone contact-sheet evidence. Continuous landmarks and full **cut+3 exclusion**
+masking remain **declared target** criteria; do not confuse a sample with a mask.
 Remotion/V3 is not installed; present output uses Pillow PNG/FFmpeg active windows.
 [Availability](../../../docs/skills/README.md) / [provenance](../../../docs/skills/provenance.json).
 

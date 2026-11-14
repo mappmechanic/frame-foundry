@@ -54,8 +54,8 @@ Matched editing-only A/B, two saved-plan renders, no new Planner/ASR/TTS; absent
 `--judge` scores remain unknown, not an improvement claim:
 
 ```sh
-export FRAMEFOUNDRY_PROJECT_API_BUDGET_USD=300
 # Existing ledger retains its own recorded initial spend; dashboard $74 is user-reported.
+# Pass a ceiling; do not overwrite a lower existing environment cap.
 .venv/bin/python scripts/policy_ab.py --from-episode az-sedona-1315 \
   --experiment "sedona-policy-$(date +%H%M%S)" --judge --budget-limit-usd 300
 make site

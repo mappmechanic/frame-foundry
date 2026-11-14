@@ -9,8 +9,10 @@ description: Plan source-preserving rough cuts, verified dead-air removal and co
 
 Original FrameFoundry instructions from the approved WO-17 scope and existing
 `pipelines/ffmpeg/assembler.py`, `teaser_edit.py` and strict narrative schema.
-This is **declared target** editorial guidance, not a newly implemented policy.
-The parent/WO-18 owns the versioned opt-in runtime; ordinary edits remain unchanged.
+The [production runtime](../../../docs/PRODUCTION_POLICY.md) implements supported rules in `production.py` only with
+`--production`; ordinary edits remain unchanged. Exact complete retakes are
+implemented; qualified semantic retakes remain a **declared target**, not a
+license to merge statements. Review the actual `editing_policy` receipt.
 See the [availability matrix](../../../docs/skills/README.md) and
 [provenance manifest](../../../docs/skills/provenance.json).
 
