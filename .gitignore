@@ -10,3 +10,13 @@ __pycache__/
 .env
 .ai-project*
 episodes/
+
+*.zip
+*.mp3
+evals/scoreboard.jsonl
+evals/human-ratings.jsonl
+evals/results/
+.inference-cache/
+*.egg-info/
+build/
+dist/

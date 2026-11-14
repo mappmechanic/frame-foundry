@@ -11,7 +11,8 @@ from .planner import plan_teaser
 from .assembler import assemble
 from .qa_validator import validate_candidate
 
-def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixture=None,provider='env'):
+def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixture=None,provider='env',visual_only=False):
+    if visual_only and transcript_fixture is not None:raise StageError('INPUT_CONFLICT','refinery','Choose visual-only or a transcript fixture, not both')
     if not goal.strip():raise StageError('GOAL_EMPTY','refinery','Goal must not be blank')
     if not Path(footage_dir).is_dir():raise StageError('INPUT_EMPTY','refinery','Footage directory is unavailable')
     episode_id=episode_id or datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S-')+uuid.uuid4().hex[:6]
@@ -37,9 +38,15 @@ def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixt
                 if mapping is None or mapping['filename']!=Path(source['path']).name or abs(mapping['duration_ms']-source['duration_ms'])>150:
                     raise StageError('FIXTURE_INVALID','refinery','Fixture source mapping mismatch',source['source_id'])
                 return [w for w in fixture['words'] if w['source_id']==source['source_id']]
-            save_state(ctx,'refinery');analysis=run_refinery(ctx,footage_dir,transcriber=fixture_words if fixture is not None else None)
+            save_state(ctx,'refinery');analysis=run_refinery(ctx,footage_dir,transcriber=fixture_words if fixture is not None else (lambda source: []) if visual_only else None)
+            analysis['transcription_status']='visual_only_unavailable' if visual_only else 'fixture' if fixture is not None else 'local_asr'
+            atomic_write_json(directory/'analysis.json',analysis)
             if fixture and any(w['source_id'] not in {s['source_id'] for s in analysis['sources']} for w in fixture['words']):raise StageError('FIXTURE_INVALID','refinery','Unknown fixture word source')
             save_state(ctx,'planner');spec=plan_teaser(ctx,analysis,provider=active_provider)
+            if visual_only:
+                spec['assumptions'].append('Explicit visual-only diagnostic mode: speech not transcribed; word integrity unverified')
+                spec['coverage']['status']='partial'
+                spec['coverage']['limitations'].append('Speech-dependent goal coverage and word-cut integrity were not verified')
             if budget_note:spec['assumptions'].append('AI unavailable: '+budget_note)
             for index in range(1,4):
                 try:
@@ -71,16 +78,26 @@ def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixt
             report=failure_report(ctx,error);report['attempts']=attempts;validate_report(report)
             atomic_write_json(directory/'qa-report.json',report);save_state(ctx,'failed',error);return report
 
-def main(argv=None):
+def _run_main(argv=None):
     p=argparse.ArgumentParser();p.add_argument('--footage-dir',required=True,type=Path);p.add_argument('--goal',required=True);p.add_argument('--episode');p.add_argument('--episodes-root',type=Path,default=Path(__file__).resolve().parents[2]/'episodes');p.add_argument('--transcript-fixture',type=Path)
+    p.add_argument('--visual-only',action='store_true',help='Explicit diagnostic mode without ASR; speech integrity remains unverified')
     args=p.parse_args(argv)
     def terminate(signum,frame):raise KeyboardInterrupt()
     old=signal.signal(signal.SIGTERM,terminate)
     try:
-        report=run_episode(args.footage_dir,args.goal,episodes_root=args.episodes_root,episode_id=args.episode,transcript_fixture=args.transcript_fixture)
-        print(json.dumps(dict(episode_id=report['episode_id'],result=report['result'],passed=report['passed'],error=report['error'],cost=report['cost'],goal_judge=report['goal_judge'],coverage=report['coverage'])))
+        report=run_episode(args.footage_dir,args.goal,episodes_root=args.episodes_root,episode_id=args.episode,transcript_fixture=args.transcript_fixture,visual_only=args.visual_only)
+        print(json.dumps(dict(episode_id=report['episode_id'],result=report['result'],passed=report['passed'],error=report['error'],tokens=dict(input=sum(c['input_tokens'] or 0 for c in report['ai_usage']),output=sum(c['output_tokens'] or 0 for c in report['ai_usage']),complete=all(c['input_tokens'] is not None and c['output_tokens'] is not None for c in report['ai_usage'] if c['status']!='blocked')),cost=report['cost'],goal_judge=report['goal_judge'],coverage=report['coverage'])))
         return 0 if report['passed'] else 1
     except StageError as e:print(e);return 2
     except KeyboardInterrupt:return 130
     finally:signal.signal(signal.SIGTERM,old)
+def main(argv=None):
+    import sys
+    args=list(sys.argv[1:] if argv is None else argv)
+    if args and args[0]=='run': args=args[1:]
+    if args and args[0] in ('eval','rate','scoreboard'):
+        from .eval_cli import main as eval_main
+        return eval_main(args)
+    return _run_main(args)
+
 if __name__=='__main__':raise SystemExit(main())
