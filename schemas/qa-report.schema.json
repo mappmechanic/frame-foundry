@@ -172,6 +172,28 @@
           "status",
           "reason",
           "required"
+        ],
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "fail"
+                }
+              },
+              "required": [
+                "status"
+              ]
+            },
+            "then": {
+              "properties": {
+                "reason": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
         ]
       }
     },
@@ -442,6 +464,12 @@
         {
           "type": "null"
         }
+      ]
+    },
+    "diagnostic_path": {
+      "type": [
+        "string",
+        "null"
       ]
     }
   },

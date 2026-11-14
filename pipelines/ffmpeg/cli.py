@@ -11,6 +11,18 @@ from .planner import plan_teaser
 from .assembler import assemble
 from .qa_validator import validate_candidate
 
+def _retain_diagnostic(directory, result, report):
+    """Keep failed media and its exact timeline/spec; never advertise delivery."""
+    if result is None or not result.candidate_path.is_file():
+        return
+    shutil.copy2(result.candidate_path, directory/'diagnostic.mp4')
+    shutil.copy2(result.timeline_path, directory/'timeline.otio')
+    shutil.copy2(result.spec_path, directory/'narrative-spec.json')
+    if (directory/'finished.mp4').is_file():
+        (directory/'finished.mp4').replace(directory/'diagnostic-previous.mp4')
+    report.update(output_path=None, diagnostic_path='diagnostic.mp4', timeline_path='timeline.otio')
+
+
 def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixture=None,provider='env',visual_only=False,evals_root=None,eval_labels=None,planner_retry=True):
     if visual_only and transcript_fixture is not None:raise StageError('INPUT_CONFLICT','refinery','Choose visual-only or a transcript fixture, not both')
     if not goal.strip():raise StageError('GOAL_EMPTY','refinery','Goal must not be blank')
@@ -21,7 +33,7 @@ def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixt
         directory=resolve_episode(root,episode_id)
         if directory.exists():raise StageError('EPISODE_EXISTS','refinery','Episode identity already exists')
         directory.mkdir();ctx=EpisodeContext(episode_id,directory,goal,fixture_mode=transcript_fixture is not None);attempts=[]
-        save_state(ctx,'accepted');report=None;evaluation=None;active_provider=None;planning_retried=False;first_eval_passed=None
+        save_state(ctx,'accepted');report=None;evaluation=None;active_provider=None;planning_retried=False;first_eval_passed=None;last_result=None;next_changes=[]
         try:
             active_provider=provider
             if provider=='env':
@@ -52,12 +64,14 @@ def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixt
             if budget_note:spec['assumptions'].append('AI unavailable: '+budget_note)
             for index in range(1,4):
                 try:
-                    save_state(ctx,'assembler');result=assemble(ctx,spec,analysis,attempt=index)
+                    save_state(ctx,'assembler');result=assemble(ctx,spec,analysis,attempt=index);last_result=result
                     amended=read_json(result.spec_path);save_state(ctx,'validator')
                     report=validate_candidate(ctx,result,amended,attempts=attempts,judge_provider=None)
                     reasons=[c['name'] for c in report['checks'] if c['status']=='fail']
-                    attempts.append(dict(index=index,stage='validator',passed=report['passed'],reasons=reasons,changes=[] if index==1 else ['Re-rendered with saved plan and independent normalization']))
+                    attempts.append(dict(index=index,stage='validator',passed=report['passed'],reasons=reasons,changes=list(next_changes)))
                     report['attempts']=copy.deepcopy(attempts)
+                    next_changes=[]
+                    if not report['passed'] and first_eval_passed is None:first_eval_passed=False
                     if report['passed']:
                         shutil.copy2(result.candidate_path,directory/'finished.mp4')
                         shutil.copy2(result.timeline_path,directory/'timeline.otio')
@@ -76,20 +90,33 @@ def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixt
                             spec=plan_teaser(ctx,analysis,provider=active_provider,retry_fix=fix[:160])
                             if visual_only:
                                 spec['coverage']['status']='partial';spec['coverage']['limitations'].append('Speech-dependent coverage and word integrity unverified in explicit visual-only mode')
-                            attempts[-1]['changes'].append('One evaluation-driven Planner retry: '+fix[:160])
+                            next_changes=['One evaluation-driven Planner retry: '+fix[:160]]
+                            attempts[-1]['changes'].extend(next_changes)
                             evaluation=None
                             continue
                         if 'duration_target' in failed_gates:
-                            diagnostic=directory/'diagnostic.mp4'
-                            (directory/'finished.mp4').replace(diagnostic)
-                            report.update(passed=False,result='failed',output_path=None,error=StageError('EVAL_DURATION_FAILED','validator','Strict evaluation duration gate failed; clip retained only as diagnostic.mp4').as_dict())
+                            code='EVAL_DURATION_FAILED'
+                            report.update(passed=False,result='failed',output_path=None,error=StageError(code,'validator','Evaluation failed: '+', '.join(sorted(failed_gates))+'; clip retained only as diagnostic.mp4').as_dict())
                             # Keep measured render evidence and G=0/Q=0 in the final evaluation.
                         if evaluation['judge'].get('reason','') and evaluation['judge']['reason'].startswith('Judge blocked by budget:'):
                             report.update(passed=False,result='failed',output_path=None,error=StageError('BUDGET_LIMIT','validator',evaluation['judge']['reason']).as_dict())
                         return report
+                    # A failed legacy QA must not bypass the bounded Planner repair.
+                    # Encoding/audio defects remain deterministic renderer repairs.
+                    if planner_retry and not planning_retried and active_provider is not None and index<3 and set(reasons)&{'timeline_and_padding','goal_duration','render_duration'}:
+                        planning_retried=True
+                        fix=('Repair technical QA: '+', '.join(reasons)+f'. Target {amended["target_duration_ms"]}ms; measured {report["actual_duration_ms"]}ms.')[:160]
+                        spec=plan_teaser(ctx,analysis,provider=active_provider,retry_fix=fix)
+                        if visual_only:
+                            spec['coverage']['status']='partial';spec['coverage']['limitations'].append('Speech-dependent coverage and word integrity unverified in explicit visual-only mode')
+                        next_changes=['One technical-QA-driven Planner retry: '+fix]
+                        attempts[-1]['changes'].extend(next_changes)
+                        evaluation=None
+                        continue
                     repairable=set(reasons)<={'loudness','true_peak','contact_sheet','output_encoding','output_dimensions','output_fps','render_duration'}
                     if report['integrated_lufs'] is None:repairable=False
                     if not repairable or index==3:break
+                    next_changes=['Re-rendered with saved plan and independent normalization']
                 except StageError as error:
                     if attempts and attempts[-1]['index']==index:
                         attempts[-1].update(stage=error.stage,passed=False,reasons=[error.code])
@@ -109,12 +136,15 @@ def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixt
             if report is not None:
                 from .evaluator import evaluate_episode,persist_report
                 try:
+                    if not report['passed']:
+                        _retain_diagnostic(directory,last_result,report)
+                        evaluation=None  # Re-measure retained diagnostic, never a stale public artifact.
                     # QA stays schema-valid and current even when the judge added usage.
                     report['ai_usage'],report['cost']=usage_summary(directory)
                     report['elapsed_seconds']=__import__('time').monotonic()-ctx.started
                     validate_report(report);atomic_write_json(directory/'qa-report.json',report)
                     if evaluation is None:
-                        evaluation=evaluate_episode(directory,provider=None if (report.get('error') or {}).get('code')=='BUDGET_LIMIT' else active_provider,evals_root=evals_root,labels=eval_labels,persist=False)
+                        evaluation=evaluate_episode(directory,provider=active_provider if report['passed'] else None,evals_root=evals_root,labels=eval_labels,persist=False)
                     evaluation['first_try_passed']=evaluation['gates']['passed'] if first_eval_passed is None else first_eval_passed
                     judge=evaluation['judge']
                     if judge['status']=='scored':
@@ -134,6 +164,7 @@ def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixt
                     if state!='interrupted':save_state(ctx,'completed' if report['passed'] else 'failed')
                 except Exception as eval_error:
                     report.update(passed=False,result='failed',output_path=None,error=StageError('EVAL_PERSISTENCE_FAILED','validator','Evaluation or persistence failed: '+type(eval_error).__name__).as_dict())
+                    _retain_diagnostic(directory,last_result,report)
                     atomic_write_json(directory/'qa-report.json',report);save_state(ctx,'failed')
 
 
@@ -146,13 +177,16 @@ def _run_main(argv=None):
     old=signal.signal(signal.SIGTERM,terminate)
     try:
         report=run_episode(args.footage_dir,args.goal,episodes_root=args.episodes_root,episode_id=args.episode,transcript_fixture=args.transcript_fixture,visual_only=args.visual_only,evals_root=args.evals_root,eval_labels=args.eval_labels,planner_retry=not args.no_planner_retry)
-        print(json.dumps(dict(episode_id=report['episode_id'],result=report['result'],passed=report['passed'],error=report['error'],tokens=dict(input=sum(c['input_tokens'] or 0 for c in report['ai_usage']),output=sum(c['output_tokens'] or 0 for c in report['ai_usage']),complete=all(c['input_tokens'] is not None and c['output_tokens'] is not None for c in report['ai_usage'] if c['status']!='blocked')),cost=report['cost'],goal_judge=report['goal_judge'],coverage=report['coverage'])))
+        print(json.dumps(dict(episode_id=report['episode_id'],result=report['result'],passed=report['passed'],error=report['error'],output_path=report['output_path'],diagnostic_path=report.get('diagnostic_path'),tokens=dict(input=sum(c['input_tokens'] or 0 for c in report['ai_usage']),output=sum(c['output_tokens'] or 0 for c in report['ai_usage']),complete=all(c['input_tokens'] is not None and c['output_tokens'] is not None for c in report['ai_usage'] if c['status']!='blocked')),cost=report['cost'],goal_judge=report['goal_judge'],coverage=report['coverage'])))
         return 0 if report['passed'] else 1
     except StageError as e:print(e);return 2
     except KeyboardInterrupt:return 130
     finally:signal.signal(signal.SIGTERM,old)
 def main(argv=None):
     import sys
+    if sys.version_info[:2] != (3,13):
+        print('FrameFoundry requires Python 3.13 with OTIO 0.18.1; recreate .venv with uv venv --python 3.13',file=sys.stderr)
+        return 2
     args=list(sys.argv[1:] if argv is None else argv)
     if args and args[0]=='run': args=args[1:]
     if args and args[0] in ('eval','rate','scoreboard'):

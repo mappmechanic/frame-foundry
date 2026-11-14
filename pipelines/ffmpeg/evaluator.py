@@ -412,7 +412,7 @@ def evaluate_episode(episode_dir, *, provider=None, evals_root=None, labels=None
     footage_hash = footage_fingerprint(sources)
     if footage_hash is None:
         limitations.append('Footage fingerprint unavailable (sources missing or unreadable)')
-    render_path = root / 'finished.mp4'
+    render_path = Path(ctx.get('render_path', root / 'finished.mp4'))
     render_hash = sha256_file(render_path) if render_path.is_file() else None
     G = 1 if gates['passed'] else 0
     if ctx.get('render') is not None:

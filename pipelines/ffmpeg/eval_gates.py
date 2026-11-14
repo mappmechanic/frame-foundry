@@ -433,13 +433,16 @@ def run_gates(episode_dir):
     requested = (spec or {}).get('aspect_ratio') or aspect
     target = (spec or {}).get('target_duration_ms')
     render = None
-    if (root / 'finished.mp4').is_file():
+    render_path=root/'finished.mp4'
+    if not render_path.is_file():render_path=root/'diagnostic.mp4'
+    ctx['render_path']=str(render_path)
+    if render_path.is_file():
         try:
-            render = ffprobe(root / 'finished.mp4')
+            render = ffprobe(render_path)
             ctx['render'] = render
             checks['readable_media'] = check('readable_media', 'pass', None, dict(duration_ms=render['duration_ms']))
         except Exception:
-            checks['readable_media'] = check('readable_media', 'fail', 'finished.mp4 cannot be probed')
+            checks['readable_media'] = check('readable_media', 'fail', 'Finished/diagnostic render cannot be probed')
     else:
         checks['readable_media'] = check('readable_media', 'not_run', 'No finished render')
     if render is None:
@@ -464,7 +467,7 @@ def run_gates(episode_dir):
 
 
 def _media_checks(root, render, requested, target, shots, source_dims, checks, ctx, limitations):
-    video_path = root / 'finished.mp4'
+    video_path = Path(ctx.get('render_path', root / 'finished.mp4'))
     size = {'9:16': (1080, 1920), '16:9': (1920, 1080)}.get(requested)
     actual = (render['width'], render['height'])
     if size is None:
