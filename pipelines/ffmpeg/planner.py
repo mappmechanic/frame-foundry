@@ -34,7 +34,7 @@ will coalesce into a long shot. When the Goal is a family trip, prioritize peopl
 shared experiences, scenic destinations and activities over static rooms or TV
 screens unless those are explicitly central to the Goal. Open with a meaningful
 hook, develop the trip, and close with a payoff. Do not impose this family-trip
-preference on unrelated Goals. Samples are not exhaustive inspection. Return optional semantic_labels per segment only when supported by its in-window tile: people, action, scenic_wide, interior, screen. First shot must feature people/action or measured high motion. Prefer scenic wides and activity; penalize static interiors/screens except meaningful people/action. Do not claim eight supplied candidates represent all footage. Do not add unlisted fields.'''
+preference on unrelated Goals. Samples are not exhaustive inspection. Return optional semantic_labels per segment only when supported by its in-window tile: people, action, scenic_wide, interior, screen. First shot must feature people/action or measured high motion. Last one or ideally two shots must mirror the hook with evidenced people/action or scenic_wide payoff, never dark or low-sharpness filler; high motion alone is not a closing qualifier. If unavailable, report partial coverage rather than invent labels. Prefer scenic wides and activity; penalize static interiors/screens except meaningful people/action. Do not claim eight supplied candidates represent all footage. Do not add unlisted fields.'''
 _RESPONSE_SCHEMA = {
     'type': 'object', 'additionalProperties': False,
     'required': ['interpretation', 'assumptions', 'segments', 'coverage'],
@@ -417,7 +417,7 @@ def plan_teaser(ctx: EpisodeContext, analysis: dict, *, provider=_DEFAULT_PROVID
                 if retry_fix is not None:payload['fix_instruction']=str(retry_fix)[:160]
                 # Cache only validated source-backed decisions, never media or credentials.
                 from .evaluator import footage_fingerprint
-                identity=dict(footage=footage_fingerprint(analysis['sources']),goal=ctx.goal,provider=getattr(provider,'provider',None),model=getattr(provider,'model',None),protocol='compact-planner-4-protected-hook',transcription_status=analysis.get('transcription_status'),candidates=rows,fix=retry_fix)
+                identity=dict(footage=footage_fingerprint(analysis['sources']),goal=ctx.goal,provider=getattr(provider,'provider',None),model=getattr(provider,'model',None),protocol='compact-planner-5-protected-closing-v1',transcription_status=analysis.get('transcription_status'),candidates=rows,fix=retry_fix)
                 key=hashlib.sha256(json.dumps(identity,sort_keys=True).encode()).hexdigest()
                 cache=Path(os.environ.get('FRAMEFOUNDRY_CACHE_DIR',str(Path(__file__).resolve().parents[2]/'.inference-cache')))/'planner'/f'{key}.json'
                 data=None
