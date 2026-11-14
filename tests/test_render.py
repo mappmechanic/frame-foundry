@@ -68,7 +68,7 @@ def test_real_render_both_aspects_duration_normalization_and_fit(tmp_path, aspec
     stats = loudness(result.candidate_path)
     assert -15 <= float(stats['input_i']) <= -13
     assert float(stats['input_tp']) <= -1
-    # Pixel checks prove proportional letterboxing, not a crop or stretch.
+    # Portrait output center-fills; horizontal output retains proportional fit.
     raw = subprocess.run(['ffmpeg', '-v', 'error', '-threads', '1', '-i', str(result.candidate_path),
                           '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-threads', '1', '-'],
                          capture_output=True, check=True, timeout=30).stdout
@@ -76,7 +76,7 @@ def test_real_render_both_aspects_duration_normalization_and_fit(tmp_path, aspec
     def pixel(x, y):
         return raw[(y*w+x)*3:(y*w+x)*3+3]
     if aspect == '9:16':
-        assert max(pixel(w//2, 0)) < 10
+        assert pixel(w//2, 0)[0] > 200
     else:
         assert pixel(w//2, 0)[0] > 200
     assert pixel(w//2, h//2)[0] > 200
