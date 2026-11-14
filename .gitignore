@@ -38,3 +38,6 @@ site/.vercel/
 /_vendor_skills/
 # Private memory and controlled learning experiments (including frozen seeds)
 evals/learning-curves/
+
+# Private policy experiments
+evals/policy-comparisons/

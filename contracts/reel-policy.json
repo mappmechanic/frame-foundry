@@ -1,0 +1,14 @@
+{
+  "version": "production-v1",
+  "default": "legacy",
+  "hook_by_ms": 2000,
+  "shot_min_ms": 1500,
+  "shot_max_ms": 4000,
+  "dead_air_ms": 350,
+  "retake_window_ms": 30000,
+  "speech_pre_ms": 80,
+  "speech_post_ms": 120,
+  "spring": {"damping": 14, "stiffness": 120, "mass": 1},
+  "portrait_exclusions": {"top": 0.10, "bottom": 0.22, "right": 0.15},
+  "landscape_title_safe": 0.10
+}

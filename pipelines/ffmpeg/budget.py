@@ -14,6 +14,12 @@ from .llm_provider import ProviderBudgetError, ProviderError, _tts_summary, epis
 PROJECT_BUDGET_USD = Decimal(500)
 
 
+def project_limit_usd():
+    try:limit=Decimal(os.environ.get('FRAMEFOUNDRY_PROJECT_API_BUDGET_USD',str(PROJECT_BUDGET_USD)))
+    except Exception:raise ProviderBudgetError('Invalid project credit limit')
+    if not limit.is_finite() or limit<=0 or limit>PROJECT_BUDGET_USD:raise ProviderBudgetError('Project credit limit must be positive and cannot exceed original cap')
+    return limit
+
 def reserve_project_episode(root: Path, episode_id: str):
     """Reserve one episode's configured allowance once; repeat calls are idempotent."""
     episode_budget = episode_budget_usd()     # invalid/non-finite env fails closed
@@ -35,7 +41,7 @@ def reserve_project_episode(root: Path, episode_id: str):
             if any(not x.is_finite() or x < 0 for x in amounts):
                 raise ValueError('Invalid reservations')
             if episode_id not in reservations:
-                if initial + sum(amounts, Decimal(0)) + episode_budget > PROJECT_BUDGET_USD:
+                if initial + sum(amounts, Decimal(0)) + episode_budget > project_limit_usd():
                     raise ProviderBudgetError('Project AI allowance would exceed $500')
                 reservations[episode_id] = str(episode_budget)
                 atomic_write_json(path, data)
@@ -57,7 +63,7 @@ def assert_can_spend(max_charge_usd, *, paid_enabled, episode_spent_usd, project
     if any(not x.is_finite() or x < 0 for x in values):
         raise ProviderError('Invalid cost')
     charge, episode, project = values
-    if episode + charge > episode_budget_usd() or project + charge > PROJECT_BUDGET_USD:
+    if episode + charge > episode_budget_usd() or project + charge > project_limit_usd():
         raise ProviderBudgetError('Budget exceeded')
 
 

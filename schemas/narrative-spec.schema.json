@@ -671,6 +671,9 @@
             "string",
             "null"
           ]
+        },
+        "production": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -685,6 +688,69 @@
         "font_sha256",
         "style_sha256"
       ]
+    },
+    "editing_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "config_hash",
+        "input_plan_hash",
+        "output_plan_hash",
+        "hook_status",
+        "changes",
+        "limitations",
+        "audio",
+        "visual"
+      ],
+      "properties": {
+        "mode": {
+          "const": "production-v1"
+        },
+        "config_hash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "input_plan_hash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "output_plan_hash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "hook_status": {
+          "enum": [
+            "verified",
+            "unavailable"
+          ]
+        },
+        "changes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "limitations": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "audio": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "visual": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "object"
+          }
+        }
+      }
     }
   },
   "required": [

@@ -111,7 +111,8 @@ def validate_candidate(ctx,result,spec,*,attempts=None,judge_provider=_DEFAULT):
         check('goal_duration',info is not None and (abs(info['duration_ms']-spec['target_duration_ms'])<=1000 or (spec['coverage']['status']=='partial' and bool(spec['coverage']['limitations']))),f"Expected target {spec['target_duration_ms']}ms ±1000ms or documented partial coverage; observed {info['duration_ms'] if info else None}ms")
     except Exception as exc:check('timeline_and_padding',False,f'Invalid timeline/source/order/padding: {exc}; repair saved timeline');check('render_duration',False,f'Timeline duration unavailable: {exc}')
     try:
-        build_contact_sheet(result.candidate_path,result.cut_times_ms,ctx.episode_dir/'contact-sheet.jpg')
+        if spec.get('editing_policy'):build_contact_sheet(result.candidate_path,result.cut_times_ms,ctx.episode_dir/'contact-sheet.jpg',production=True)
+        else:build_contact_sheet(result.candidate_path,result.cut_times_ms,ctx.episode_dir/'contact-sheet.jpg')
         report['contact_sheet_path']='contact-sheet.jpg';check('contact_sheet',True,None)
     except Exception as exc:check('contact_sheet',False,f'Cut-boundary evidence unavailable: {exc}; regenerate contact sheet')
     from .overlays import verify
@@ -120,6 +121,8 @@ def validate_candidate(ctx,result,spec,*,attempts=None,judge_provider=_DEFAULT):
         except Exception:checks.append(dict(name='overlay_render_binding',status='fail',reason='Overlay verification unavailable',required=True))
         report['limitations'].extend(spec['overlays']['limitations'])
     else:report['limitations'].append('Overlays disabled; overlay checks not applicable')
+    from .production import verify as verify_policy
+    checks.extend(verify_policy(spec,{},root=ctx.episode_dir))
     report['checks']=checks;technical=all(c['status']=='pass' for c in checks)
     if technical:
         judge=judge_goal(ctx,spec,result,words=words) if judge_provider is _DEFAULT else judge_goal(ctx,spec,result,provider=judge_provider,words=words)

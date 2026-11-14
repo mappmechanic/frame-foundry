@@ -49,3 +49,15 @@ See [availability/provenance](docs/skills/README.md) and the
 inspection staging. Preserve full linked notices, including font/media exceptions;
 never import staged assets, installers or bulk prompts. Blocked noncommercial,
 unlicensed and AGPL sources were not cloned/read/copied. No npm/npx installers.
+
+## 5. Opt-in runtime availability (WO-18)
+
+The earlier WO-17 table records the documentation-only milestone. The current
+`--production` implementation is mapped in [PRODUCTION_POLICY.md](docs/PRODUCTION_POLICY.md):
+`production.py` applies source-preserving hook/pacing/silence rules; `audio_policy.py`
+mixes authorized optional beds; `overlays.py` applies the14/120/1 analytic spring
+and stricter zones; QA adds bound policy/subject checks and cut+3 exclusion sheets.
+`policy_ab.py` records matched saved-plan evaluation; publication requires actual
+exported complete evidence. Ordinary edits remain legacy by default. Remotion/V3,
+continuous eye/chin tracking and112% face-safe punch-ins are NOT implemented.
+No new Planner/ASR/TTS call is needed for deterministic saved-plan replay.

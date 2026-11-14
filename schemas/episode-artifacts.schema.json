@@ -635,7 +635,8 @@
                 "enum": [
                   "before",
                   "after",
-                  "representative"
+                  "representative",
+                  "after_three"
                 ]
               },
               "time_ms": {
