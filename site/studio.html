@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Inspect recorded FrameFoundry clips, contact sheets, scores, and QA evidence. No live rendering."><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self'; media-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'"><title>Recorded studio — FrameFoundry</title><style>
+:root{color-scheme:dark;--bg:#101414;--panel:#191f1f;--line:#354343;--muted:#aabbbb;--text:#f0f5f3;--accent:#83e2c3;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);line-height:1.6}a{color:var(--accent);text-underline-offset:.25em}button,input,textarea,select{font:inherit}a:focus-visible,select:focus-visible,video:focus-visible,summary:focus-visible{outline:3px solid var(--accent);outline-offset:5px}.skip{position:absolute;top:-100px;left:20px;background:var(--panel);padding:12px;z-index:10}.skip:focus{top:12px}
+.wrap{max-width:1160px;margin:auto;padding:0 28px}header{border-bottom:1px solid var(--line)}nav{min-height:86px;display:flex;align-items:center;justify-content:space-between;gap:20px}.brand{font-weight:750;letter-spacing:-.04em;font-size:1.3rem;color:var(--text);text-decoration:none}.brand span{color:var(--accent)}.navlinks{display:flex;gap:24px;font-size:.9rem}.eyebrow{color:var(--accent);font-size:.76rem;text-transform:uppercase;letter-spacing:.16em;font-weight:650}.badge{border:1px solid var(--line);border-radius:30px;padding:6px 12px;font-size:.75rem;color:var(--muted);display:inline-block}h1,h2,h3,p{margin-top:0}h1{font-size:clamp(2.5rem,5.5vw,4.8rem);line-height:1.07;letter-spacing:-.06em;margin-bottom:26px;font-weight:650}h2{font-size:clamp(1.7rem,3vw,2.4rem);line-height:1.2;letter-spacing:-.04em}h3{font-size:1.05rem;line-height:1.3}.muted,.hint{color:var(--muted)}.hint{font-size:.85rem}.lede{font-size:1.1rem;max-width:540px;color:var(--muted)}.hero{display:grid;grid-template-columns:1.15fr 1fr;gap:72px;padding:76px 0;align-items:center}.goal-flow{margin:28px 0;color:var(--muted);font-size:.95rem}.goal-flow strong{color:var(--text)}.button{display:inline-flex;align-items:center;gap:22px;background:var(--accent);color:#101a16;padding:13px 20px;border-radius:6px;font-weight:650;text-decoration:none}.button:hover{background:#acf0d9}.quiet-link{display:inline-block;margin-left:16px}.video-card{padding:18px;background:var(--panel);border:1px solid var(--line);border-radius:14px}.video-frame{max-width:285px;margin:0 auto;aspect-ratio:9/16;background:#090d0d;border:1px solid var(--line);border-radius:7px;overflow:hidden;display:grid;place-items:center}.video-frame video{width:100%;height:100%;object-fit:contain;grid-area:1/1}.video-frame .placeholder{grid-area:1/1;padding:24px;text-align:center;color:var(--muted);z-index:1;font-size:.9rem}.caption{display:flex;justify-content:space-between;gap:16px;margin:14px 0 0;color:var(--muted);font-size:.78rem}.section{padding:52px 0;border-top:1px solid var(--line)}.section-head{display:flex;justify-content:space-between;align-items:start;gap:20px;margin-bottom:26px}.section-head h2{margin:0}.pipeline{list-style:none;padding:0;margin:0;display:grid;grid-template-columns:repeat(5,1fr);gap:12px}.pipeline li{padding:22px 18px;border:1px solid var(--line);border-radius:7px;background:var(--panel)}.step{display:block;font-size:.7rem;color:var(--accent);margin-bottom:14px}.pipeline p{font-size:.85rem;color:var(--muted);margin:0}.metrics{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}.metric{padding:20px 16px;background:var(--panel);border:1px solid var(--line);border-radius:7px}.metric dt{color:var(--muted);font-size:.8rem}.metric dd{margin:10px 0 2px;font-size:1.7rem;letter-spacing:-.04em}.metric small{color:var(--muted);font-size:.73rem;display:block}.story{display:grid;grid-template-columns:1fr 1fr;gap:50px}.story-path{padding:20px;border-left:2px solid var(--accent);background:var(--panel)}.story-path p:last-child{margin:0}.cta{display:flex;justify-content:space-between;align-items:center;gap:24px}.cta h2{margin-bottom:10px}footer{border-top:1px solid var(--line);padding:26px 0;color:var(--muted);font-size:.8rem}.reveal{animation:enter .6s ease-out both}@keyframes enter{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}[hidden]{display:none!important}
+.studio-title{padding:45px 0 24px}.studio-title h1{font-size:clamp(2.4rem,4vw,3.5rem);margin:12px 0}.studio-layout{display:grid;grid-template-columns:340px minmax(0,1fr);gap:24px;align-items:start;margin-bottom:44px}.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:24px}.control{margin-bottom:24px}label{display:block;font-size:.9rem;margin-bottom:9px}textarea,select{width:100%;border:1px solid var(--line);border-radius:6px;background:#111818;color:var(--text);padding:12px}textarea{resize:none;min-height:104px}select{cursor:pointer}select:disabled{cursor:not-allowed;color:var(--muted)}.drop{border:1px dashed #526363;border-radius:6px;padding:25px 15px;text-align:center;color:var(--muted)}input[type=file]{display:block;max-width:100%;font-size:.75rem;margin-top:12px}.render{width:100%;padding:12px;background:#2a3934;border:1px solid #476052;border-radius:6px;color:#b1c8bc;cursor:not-allowed}.note{font-size:.86rem;color:var(--accent);margin:14px 0 0}.preview-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}.preview-grid .video-frame{width:100%;max-width:250px}.run-heading{font-size:1.25rem;margin:0 0 14px}.run-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:0 0 24px}.run-stats .metric{padding:12px;background:#111818}.run-stats dd{font-size:1.4rem}.details{margin-top:22px}.sheet{width:100%;height:auto;border-radius:6px;border:1px solid var(--line)}table{width:100%;border-collapse:collapse;font-size:.85rem;text-align:left}th,td{padding:10px 8px;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--muted);font-weight:500}.table-scroll{overflow-x:auto}td{overflow-wrap:anywhere}.checks{list-style:none;padding:0}.checks li{border-bottom:1px solid var(--line);padding:10px 0;font-size:.85rem}.checks strong{color:var(--accent)}.fact{font-size:.86rem;margin-bottom:12px}.fact strong{font-weight:500;color:var(--muted)}.state{font-size:.85rem;color:var(--muted);margin-bottom:16px;min-height:1.6em}.error{color:#ffd0ac}.small-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px}.warning{border-left:2px solid var(--accent);padding-left:14px}
+@media(max-width:900px){.hero{gap:30px}.metrics{grid-template-columns:repeat(3,1fr)}.pipeline{grid-template-columns:repeat(3,1fr)}.studio-layout{grid-template-columns:280px minmax(0,1fr)}.preview-grid{grid-template-columns:1fr}.preview-grid .video-frame{max-width:240px}.small-grid{grid-template-columns:1fr}}
+@media(max-width:640px){.wrap{padding:0 20px}nav{min-height:72px}.navlinks{gap:16px}.hero{grid-template-columns:1fr;gap:34px;padding:46px 0}.hero h1{max-width:420px}.video-card{max-width:390px;width:100%;margin:auto}.pipeline{grid-template-columns:1fr 1fr}.metrics{grid-template-columns:1fr 1fr}.story,.studio-layout{grid-template-columns:1fr;gap:24px}.section{padding:36px 0}.section-head,.cta{display:block}.section-head .hint{margin-top:12px}.cta .button{margin-top:10px}.quiet-link{margin:14px 0 0;display:block}.studio-title{padding-top:32px}.panel{padding:20px}.preview-grid{grid-template-columns:1fr}.small-grid{gap:10px}.run-stats .metric{padding:10px}.caption{flex-wrap:wrap}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+</style></head><body><a class="skip" href="#main">Skip to content</a><header><nav class="wrap" aria-label="Main navigation"><a class="brand" href="/">Frame<span>Foundry</span></a><div class="navlinks"><a href="/#pipeline">The pipeline</a><a href="/studio">Recorded studio</a></div></nav></header><main id="main" class="wrap"><div class="studio-title reveal"><span class="badge">RECORDED DEMO · READ ONLY</span><h1>The studio, without the wait.</h1><p class="muted">Browse exported clips and the evidence behind each edit.</p></div><div class="studio-layout"><aside class="panel" aria-label="Read-only rendering controls"><div class="control"><label for="upload">Raw footage</label><div class="drop" aria-disabled="true">Upload and drop are disabled.<br><span class="hint">Local footage is not sent anywhere.</span><input id="upload" type="file" disabled aria-label="Upload footage disabled in recorded demo"></div></div><div class="control"><label for="goal">Goal <span class="hint">· illustrative, read only</span></label><textarea id="goal" readonly aria-describedby="goal-note">Create a 45-second family-trip teaser</textarea><p id="goal-note" class="hint">A generic example, not a claim about any selected run.</p></div><button type="button" class="render" disabled>Render clip · disabled</button><p class="note">renders run locally on the Mac; this is a recorded demo</p><hr style="border:0;border-top:1px solid var(--line);margin:26px 0"><label for="run-picker">Recorded run</label><select id="run-picker" disabled><option>Loading recorded runs…</option></select><p id="index-state" class="state" role="status" style="margin-top:12px">Loading exported run index…</p><p class="hint">The lead recording is selected by default. No generation APIs are connected.</p></aside>
+<section class="panel" aria-label="Selected recording"><h2 id="run-heading" class="run-heading">Recorded run · N/A</h2><p id="run-state" class="state" role="status" aria-live="polite">Waiting for recorded data…</p><div class="preview-grid"><div><div class="video-frame"><video id="run-video" controls playsinline preload="metadata" aria-label="Selected recorded vertical clip"></video><div id="video-state" class="placeholder" role="status">Recorded video: N/A</div></div><p id="output-note" class="hint" style="margin-top:12px">Output metadata: N/A</p></div><div><dl class="run-stats"><div class="metric"><dt>Judge J</dt><dd id="run-J">N/A</dd></div><div class="metric"><dt>Quality Q</dt><dd id="run-Q">N/A</dd></div><div class="metric"><dt>Deterministic D</dt><dd id="run-D">N/A</dd></div></dl><p class="hint">J / Q / D are normalized 0–1. Judge criteria below use a separate 1–5 rubric.</p><p class="fact"><strong>Run cost:</strong> <span id="run-cost">N/A</span></p><p class="fact"><strong>Cost accounting:</strong> <span id="cost-status">N/A</span></p><p class="fact"><strong>Known subtotal:</strong> <span id="known-cost">N/A</span></p><p class="fact"><strong>Quality / dollar (Q/$):</strong> <span id="run-efficiency">N/A</span></p><p class="fact"><strong>First-try pass:</strong> <span id="first-pass">N/A</span></p><p class="fact"><strong>Pipeline elapsed:</strong> <span id="elapsed">N/A</span></p><p class="fact"><strong>Recorded at:</strong> <span id="created-at">N/A</span></p></div></div>
+<div class="details"><h3>Contact sheet</h3><p id="sheet-state" class="state" role="status">Contact sheet: N/A</p><img id="contact-sheet" class="sheet" alt="Frame-boundary contact sheet for selected recorded clip" hidden></div><div class="details"><h3>Judge breakdown & shot evidence</h3><p class="fact"><strong>Judge status:</strong> <span id="judge-status">N/A</span> · <strong>Verdict:</strong> <span id="judge-verdict">N/A</span></p><div class="table-scroll"><table><caption class="hint" style="text-align:left;padding-bottom:10px">Criteria are scored 1–5; evidence identifies recorded shots.</caption><thead><tr><th scope="col">Criterion</th><th scope="col">Score</th><th scope="col">Evidence shot IDs</th></tr></thead><tbody id="judge-rows"></tbody></table></div><p class="fact" style="margin-top:16px"><strong>Weakest shot:</strong> <span id="weakest-shot">N/A</span></p></div><div class="details small-grid"><div><h3>Render QA</h3><p class="fact"><strong>QA result:</strong> <span id="qa-result">N/A</span></p><p class="hint">Integrated loudness: <span id="lufs">N/A</span> · True peak: <span id="peak">N/A</span></p><ul id="qa-checks" class="checks"></ul></div><div><h3>Evaluation gates</h3><p class="fact"><strong>Gate result:</strong> <span id="gate-result">N/A</span></p><ul id="gate-checks" class="checks"></ul></div></div><p class="hint warning">Render QA, evaluation gates, Judge verdict, and first-try pass are independent signals. A pass does not imply a merged PR.</p></section></div><noscript><p class="warning">JavaScript is needed to browse recorded data. Rendering remains disabled.</p></noscript></main><footer><div class="wrap">FrameFoundry · Built with 8090 Software Factory · Static, recorded demo. No rendering on this site.</div></footer><script>
+'use strict';
+const byId = id => document.getElementById(id);
+const object = value => value !== null && typeof value === 'object' && !Array.isArray(value) ? value : {};
+const array = value => Array.isArray(value) ? value : [];
+const number = value => typeof value === 'number' && Number.isFinite(value);
+const unit = value => number(value) && value >= 0 && value <= 1;
+const amount = value => number(value) && value >= 0;
+const count = value => Number.isInteger(value) && value >= 0 ? String(value) : 'N/A';
+const score = value => unit(value) ? value.toFixed(3) : 'N/A';
+const money = value => amount(value) ? '$' + value.toFixed(4) : 'N/A';
+const percent = value => unit(value) ? (value * 100).toFixed(1) + '%' : 'N/A';
+const yesno = value => value === true ? 'Pass' : value === false ? 'Fail' : 'N/A';
+const safeId = value => typeof value === 'string' && /^[a-z0-9][a-z0-9_-]{0,79}$/.test(value);
+// Public filenames are an exact allowlist, never arbitrary exporter-provided URLs.
+function mediaPath(id, value, filename) {
+  const expected = '/runs/' + id + '/' + filename;
+  return safeId(id) && value === expected ? expected : null;
+}
+function publicText(value) {
+  if (typeof value !== 'string' || !value.trim()) return 'N/A';
+  // Do not echo local filesystem paths, credentials, URLs, or unbounded freeform text.
+  if (/[\/\\]|(?:token|password|secret|api[_ -]?key)\s*[:=]/i.test(value)) return 'Details withheld';
+  return value.slice(0, 240);
+}
+const put = (id, value) => { byId(id).textContent = value; };
+async function getJSON(path) {
+  if (!/^\/runs\/(?:index\.json|scoreboard\.json|[a-z0-9][a-z0-9_-]{0,79}\/run\.json)$/.test(path)) throw new Error('Unsafe public path');
+  const response = await fetch(path, {method:'GET', credentials:'omit', redirect:'error', cache:'no-cache'});
+  if (!response.ok) throw new Error('Recorded data unavailable');
+  const data = await response.json();
+  if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Invalid recorded data');
+  return data;
+}
+function runsFrom(data) {
+  if (data.schema_version !== '1.0' || data.mode !== 'recorded-demo' || !Array.isArray(data.runs)) throw new Error('Invalid run index');
+  const seen = new Set();
+  return data.runs.filter(run => {
+    if (!run || !safeId(run.id) || seen.has(run.id) || !mediaPath(run.id, run.data_url, 'run.json')) return false;
+    seen.add(run.id); return true;
+  }).sort((a,b) => {
+    const time = r => typeof r.created_at === 'string' && Number.isFinite(Date.parse(r.created_at)) ? Date.parse(r.created_at) : 0;
+    return time(b) - time(a) || b.id.localeCompare(a.id);
+  });
+}
+function leadRun(data, runs) {
+  return runs.find(run => run.id === data.lead_run_id) || runs.find(run => run.id === data.latest_run_id) || runs[0];
+}
+function clearMedia() {
+  const video = byId('run-video');
+  video.pause(); video.removeAttribute('src'); video.load();
+  put('video-state', 'Recorded video: N/A'); byId('video-state').hidden = false;
+}
+function setVideo(run) {
+  clearMedia();
+  const path = mediaPath(run.id, run.video_url, 'finished.mp4');
+  if (!path) return;
+  put('video-state', 'Loading recorded video…');
+  const video = byId('run-video');
+  video.onloadedmetadata = () => { if (video.getAttribute('src') === path) byId('video-state').hidden = true; };
+  video.onerror = () => { if (video.getAttribute('src') === path) { put('video-state', 'Recorded video unavailable'); byId('video-state').hidden = false; } };
+  video.setAttribute('src', path); video.load();
+}
+
+const criteria = {goal_fit:'Goal fit', moment_importance:'Moment importance', story_arc:'Story arc', variety:'Variety', opening:'Opening', ending:'Ending'};
+const shotId = value => typeof value === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/.test(value) ? value : 'N/A';
+const stateWord = value => ['pass','fail','passed','failed','scored','unavailable','skipped','unknown','estimated','measured','complete','incomplete','error'].includes(value) ? value : 'N/A';
+let availableRuns = [], selectionVersion = 0;
+function judgeRows(judge) {
+  const rows = byId('judge-rows'); rows.replaceChildren();
+  for (const [key,label] of Object.entries(criteria)) {
+    const row = document.createElement('tr');
+    const value = object(judge.scores)[key];
+    const evidence = array(object(judge.evidence)[key]).map(shotId).filter(id => id !== 'N/A').slice(0,40);
+    for (const text of [label, Number.isInteger(value) && value >= 1 && value <= 5 ? value + ' / 5' : 'N/A', evidence.length ? evidence.join(', ') : 'N/A']) {
+      const cell = document.createElement('td'); cell.textContent = text; row.append(cell);
+    }
+    rows.append(row);
+  }
+}
+function checks(id, items) {
+  const list = byId(id); list.replaceChildren();
+  for (const check of array(items).slice(0,60)) {
+    const c = object(check), li = document.createElement('li'), status = document.createElement('strong');
+    status.textContent = stateWord(c.status).toUpperCase() + ' · ';
+    const text = document.createElement('span'); text.textContent = publicText(c.name) + ' — ' + publicText(c.reason);
+    li.append(status,text); list.append(li);
+  }
+  if (!list.children.length) { const li = document.createElement('li'); li.textContent = 'No recorded checks available · N/A'; list.append(li); }
+}
+function clearRun() {
+  clearMedia();
+  const sheet = byId('contact-sheet'); sheet.removeAttribute('src'); sheet.hidden = true;
+  put('sheet-state', 'Contact sheet: N/A'); put('output-note', 'Output metadata: N/A');
+  for (const id of ['run-J','run-Q','run-D','run-cost','cost-status','known-cost','run-efficiency','first-pass','elapsed','created-at','judge-status','judge-verdict','weakest-shot','qa-result','lufs','peak','gate-result']) put(id,'N/A');
+  judgeRows({}); checks('qa-checks',[]); checks('gate-checks',[]);
+}
+function renderRun(run, version) {
+  setVideo(run);
+  const sheet = byId('contact-sheet'), path = mediaPath(run.id, run.contact_sheet_url, 'contact-sheet.jpg');
+  if (path) {
+    put('sheet-state','Loading contact sheet…');
+    sheet.onload = () => { if (version === selectionVersion && sheet.getAttribute('src') === path) { sheet.hidden = false; put('sheet-state','Recorded frame-boundary evidence'); } };
+    sheet.onerror = () => { if (version === selectionVersion && sheet.getAttribute('src') === path) { sheet.hidden = true; put('sheet-state','Contact sheet unavailable'); } };
+    sheet.setAttribute('src',path);
+  }
+  const scores = object(run.scores), cost = object(run.cost), qa = object(run.qa), gates = object(run.gates), judge = object(run.judge), output = object(run.output);
+  for (const key of ['J','Q','D']) put('run-' + key,score(scores[key]));
+  put('run-cost',money(cost.usd)); put('known-cost',money(cost.known_usd)); put('cost-status',stateWord(cost.status));
+  put('run-efficiency',amount(cost.quality_per_dollar) ? cost.quality_per_dollar.toFixed(3) : 'N/A');
+  put('first-pass',yesno(run.first_try_passed)); put('elapsed',amount(run.elapsed_seconds) ? run.elapsed_seconds.toFixed(1) + ' s' : 'N/A');
+  const date = typeof run.created_at === 'string' ? new Date(run.created_at) : new Date(NaN);
+  put('created-at',Number.isFinite(date.getTime()) ? date.toISOString() : 'N/A');
+  put('judge-status',stateWord(judge.status)); put('judge-verdict',stateWord(judge.verdict)); put('weakest-shot',shotId(judge.weakest_shot)); judgeRows(judge);
+  put('qa-result',yesno(qa.passed)); put('gate-result',yesno(gates.passed));
+  put('lufs',number(qa.integrated_lufs) ? qa.integrated_lufs.toFixed(1) + ' LUFS' : 'N/A');
+  put('peak',number(qa.true_peak_dbtp) ? qa.true_peak_dbtp.toFixed(1) + ' dBTP' : 'N/A');
+  checks('qa-checks',qa.checks); checks('gate-checks',gates.checks);
+  const dimensions = output.width === 720 && output.height === 1280 ? '720 × 1280' : 'N/A';
+  put('output-note',dimensions + ' · ' + (output.codec === 'h264' ? 'H.264' : 'N/A codec') + ' · ' + (amount(output.duration_seconds) ? output.duration_seconds.toFixed(1) + ' s' : 'N/A duration'));
+}
+async function selectRun(id) {
+  const version = ++selectionVersion;
+  clearRun();
+  const summary = availableRuns.find(run => run.id === id);
+  put('run-heading',summary ? 'Recorded run · ' + summary.id : 'Recorded run · N/A');
+  if (!summary) { put('run-state','No recorded run selected.'); return; }
+  put('run-state','Loading recorded run…');
+  try {
+    const run = await getJSON(mediaPath(id, summary.data_url, 'run.json'));
+    if (version !== selectionVersion) return;
+    if (run.id !== id) throw new Error('Mismatched run');
+    renderRun(run,version); put('run-state','Recorded evidence loaded. No rendering has been started.');
+  } catch (_) {
+    if (version !== selectionVersion) return;
+    clearRun(); put('run-state','Recorded run data unavailable. All measurements are N/A; no rendering was attempted.');
+  }
+}
+async function loadIndex() {
+  clearRun();
+  const picker = byId('run-picker');
+  try {
+    const data = await getJSON('/runs/index.json'); availableRuns = runsFrom(data);
+    picker.replaceChildren();
+    if (!availableRuns.length) {
+      const option = document.createElement('option'); option.textContent = 'No recorded runs available'; picker.append(option);
+      put('index-state','No recorded clips exported yet.'); put('run-state','No recorded data available. Measurements are N/A.'); return;
+    }
+    for (const run of availableRuns) { const option = document.createElement('option'); option.value = run.id; option.textContent = run.id; picker.append(option); }
+    picker.disabled = false; picker.value = leadRun(data,availableRuns).id;
+    put('index-state',availableRuns.length + ' recorded clip(s) available');
+    await selectRun(picker.value);
+  } catch (_) {
+    picker.replaceChildren(); const option = document.createElement('option'); option.textContent = 'Recorded runs unavailable'; picker.append(option);
+    put('index-state','Run index unavailable. No data has been generated.'); put('run-state','Recorded data unavailable. Measurements are N/A.');
+  }
+}
+byId('run-picker').addEventListener('change',event => selectRun(event.target.value));
+// Suppress browser navigation on any drop: dropped files never become render inputs.
+document.addEventListener('dragover',event => event.preventDefault());
+document.addEventListener('drop',event => event.preventDefault());
+loadIndex();
+</script></body></html>

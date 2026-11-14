@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="A recorded look at the FrameFoundry footage-to-clip pipeline, built with 8090 Software Factory."><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self'; media-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'"><title>FrameFoundry — Footage to finished clips</title><style>
+:root{color-scheme:dark;--bg:#101414;--panel:#191f1f;--line:#354343;--muted:#aabbbb;--text:#f0f5f3;--accent:#83e2c3;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);line-height:1.6}a{color:var(--accent);text-underline-offset:.25em}button,input,textarea,select{font:inherit}a:focus-visible,select:focus-visible,video:focus-visible,summary:focus-visible{outline:3px solid var(--accent);outline-offset:5px}.skip{position:absolute;top:-100px;left:20px;background:var(--panel);padding:12px;z-index:10}.skip:focus{top:12px}
+.wrap{max-width:1160px;margin:auto;padding:0 28px}header{border-bottom:1px solid var(--line)}nav{min-height:86px;display:flex;align-items:center;justify-content:space-between;gap:20px}.brand{font-weight:750;letter-spacing:-.04em;font-size:1.3rem;color:var(--text);text-decoration:none}.brand span{color:var(--accent)}.navlinks{display:flex;gap:24px;font-size:.9rem}.eyebrow{color:var(--accent);font-size:.76rem;text-transform:uppercase;letter-spacing:.16em;font-weight:650}.badge{border:1px solid var(--line);border-radius:30px;padding:6px 12px;font-size:.75rem;color:var(--muted);display:inline-block}h1,h2,h3,p{margin-top:0}h1{font-size:clamp(2.5rem,5.5vw,4.8rem);line-height:1.07;letter-spacing:-.06em;margin-bottom:26px;font-weight:650}h2{font-size:clamp(1.7rem,3vw,2.4rem);line-height:1.2;letter-spacing:-.04em}h3{font-size:1.05rem;line-height:1.3}.muted,.hint{color:var(--muted)}.hint{font-size:.85rem}.lede{font-size:1.1rem;max-width:540px;color:var(--muted)}.hero{display:grid;grid-template-columns:1.15fr 1fr;gap:72px;padding:76px 0;align-items:center}.goal-flow{margin:28px 0;color:var(--muted);font-size:.95rem}.goal-flow strong{color:var(--text)}.button{display:inline-flex;align-items:center;gap:22px;background:var(--accent);color:#101a16;padding:13px 20px;border-radius:6px;font-weight:650;text-decoration:none}.button:hover{background:#acf0d9}.quiet-link{display:inline-block;margin-left:16px}.video-card{padding:18px;background:var(--panel);border:1px solid var(--line);border-radius:14px}.video-frame{max-width:285px;margin:0 auto;aspect-ratio:9/16;background:#090d0d;border:1px solid var(--line);border-radius:7px;overflow:hidden;display:grid;place-items:center}.video-frame video{width:100%;height:100%;object-fit:contain;grid-area:1/1}.video-frame .placeholder{grid-area:1/1;padding:24px;text-align:center;color:var(--muted);z-index:1;font-size:.9rem}.caption{display:flex;justify-content:space-between;gap:16px;margin:14px 0 0;color:var(--muted);font-size:.78rem}.section{padding:52px 0;border-top:1px solid var(--line)}.section-head{display:flex;justify-content:space-between;align-items:start;gap:20px;margin-bottom:26px}.section-head h2{margin:0}.pipeline{list-style:none;padding:0;margin:0;display:grid;grid-template-columns:repeat(5,1fr);gap:12px}.pipeline li{padding:22px 18px;border:1px solid var(--line);border-radius:7px;background:var(--panel)}.step{display:block;font-size:.7rem;color:var(--accent);margin-bottom:14px}.pipeline p{font-size:.85rem;color:var(--muted);margin:0}.metrics{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}.metric{padding:20px 16px;background:var(--panel);border:1px solid var(--line);border-radius:7px}.metric dt{color:var(--muted);font-size:.8rem}.metric dd{margin:10px 0 2px;font-size:1.7rem;letter-spacing:-.04em}.metric small{color:var(--muted);font-size:.73rem;display:block}.story{display:grid;grid-template-columns:1fr 1fr;gap:50px}.story-path{padding:20px;border-left:2px solid var(--accent);background:var(--panel)}.story-path p:last-child{margin:0}.cta{display:flex;justify-content:space-between;align-items:center;gap:24px}.cta h2{margin-bottom:10px}footer{border-top:1px solid var(--line);padding:26px 0;color:var(--muted);font-size:.8rem}.reveal{animation:enter .6s ease-out both}@keyframes enter{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}[hidden]{display:none!important}
+.studio-title{padding:45px 0 24px}.studio-title h1{font-size:clamp(2.4rem,4vw,3.5rem);margin:12px 0}.studio-layout{display:grid;grid-template-columns:340px minmax(0,1fr);gap:24px;align-items:start;margin-bottom:44px}.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:24px}.control{margin-bottom:24px}label{display:block;font-size:.9rem;margin-bottom:9px}textarea,select{width:100%;border:1px solid var(--line);border-radius:6px;background:#111818;color:var(--text);padding:12px}textarea{resize:none;min-height:104px}select{cursor:pointer}select:disabled{cursor:not-allowed;color:var(--muted)}.drop{border:1px dashed #526363;border-radius:6px;padding:25px 15px;text-align:center;color:var(--muted)}input[type=file]{display:block;max-width:100%;font-size:.75rem;margin-top:12px}.render{width:100%;padding:12px;background:#2a3934;border:1px solid #476052;border-radius:6px;color:#b1c8bc;cursor:not-allowed}.note{font-size:.86rem;color:var(--accent);margin:14px 0 0}.preview-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}.preview-grid .video-frame{width:100%;max-width:250px}.run-heading{font-size:1.25rem;margin:0 0 14px}.run-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:0 0 24px}.run-stats .metric{padding:12px;background:#111818}.run-stats dd{font-size:1.4rem}.details{margin-top:22px}.sheet{width:100%;height:auto;border-radius:6px;border:1px solid var(--line)}table{width:100%;border-collapse:collapse;font-size:.85rem;text-align:left}th,td{padding:10px 8px;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--muted);font-weight:500}.table-scroll{overflow-x:auto}td{overflow-wrap:anywhere}.checks{list-style:none;padding:0}.checks li{border-bottom:1px solid var(--line);padding:10px 0;font-size:.85rem}.checks strong{color:var(--accent)}.fact{font-size:.86rem;margin-bottom:12px}.fact strong{font-weight:500;color:var(--muted)}.state{font-size:.85rem;color:var(--muted);margin-bottom:16px;min-height:1.6em}.error{color:#ffd0ac}.small-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px}.warning{border-left:2px solid var(--accent);padding-left:14px}
+@media(max-width:900px){.hero{gap:30px}.metrics{grid-template-columns:repeat(3,1fr)}.pipeline{grid-template-columns:repeat(3,1fr)}.studio-layout{grid-template-columns:280px minmax(0,1fr)}.preview-grid{grid-template-columns:1fr}.preview-grid .video-frame{max-width:240px}.small-grid{grid-template-columns:1fr}}
+@media(max-width:640px){.wrap{padding:0 20px}nav{min-height:72px}.navlinks{gap:16px}.hero{grid-template-columns:1fr;gap:34px;padding:46px 0}.hero h1{max-width:420px}.video-card{max-width:390px;width:100%;margin:auto}.pipeline{grid-template-columns:1fr 1fr}.metrics{grid-template-columns:1fr 1fr}.story,.studio-layout{grid-template-columns:1fr;gap:24px}.section{padding:36px 0}.section-head,.cta{display:block}.section-head .hint{margin-top:12px}.cta .button{margin-top:10px}.quiet-link{margin:14px 0 0;display:block}.studio-title{padding-top:32px}.panel{padding:20px}.preview-grid{grid-template-columns:1fr}.small-grid{gap:10px}.run-stats .metric{padding:10px}.caption{flex-wrap:wrap}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+</style></head><body><a class="skip" href="#main">Skip to content</a><header><nav class="wrap" aria-label="Main navigation"><a class="brand" href="/">Frame<span>Foundry</span></a><div class="navlinks"><a href="/#pipeline">The pipeline</a><a href="/studio">Recorded studio</a></div></nav></header><main id="main" class="wrap"><section class="hero reveal" aria-labelledby="hero-title"><div><p class="eyebrow">Footage in. Story out.</p><h1 id="hero-title">A video factory.<br>Not another timeline.</h1><p class="lede">Turn raw footage and a one-line Goal into a finished vertical clip. Planned, assembled, and checked by a pipeline of agents.</p><p class="goal-flow"><strong>Raw footage + one-line Goal</strong><br>↓<br><strong>Finished vertical clip</strong></p><a class="button" href="/studio">Explore the recorded studio <span aria-hidden="true">↗</span></a><a class="quiet-link" href="#pipeline">See how it works</a><p class="hint" style="margin-top:20px">A real recorded workflow, not live rendering in your browser.</p></div><div class="video-card"><div class="video-frame"><video id="run-video" controls playsinline preload="metadata" aria-label="Lead recorded vertical clip"></video><div id="video-state" class="placeholder" role="status">Loading recorded video…</div></div><div class="caption"><span id="lead-label">Recorded output · N/A</span><span>9:16 · sound on demand</span></div><p id="index-state" class="state" role="status" style="margin:12px 0 0">Loading recorded runs…</p></div></section>
+<section id="pipeline" class="section"><div class="section-head"><h2>One Goal. Five stages.</h2><span class="hint">From source material to checked output.</span></div><ol class="pipeline"><li><span class="step">01 / UNDERSTAND</span><h3>Refinery</h3><p>Analyze source footage and collect usable moments.</p></li><li><span class="step">02 / STRUCTURE</span><h3>Planner</h3><p>Shape the Goal into a grounded sequence of shots.</p></li><li><span class="step">03 / BUILD</span><h3>Assembler</h3><p>Compile the edit into a finished vertical video.</p></li><li><span class="step">04 / VERIFY</span><h3>Validator</h3><p>Check technical gates and render QA evidence.</p></li><li><span class="step">05 / EVALUATE</span><h3>Judge</h3><p>Score the story with criterion-level shot evidence.</p></li></ol></section>
+<section class="section" aria-labelledby="scoreboard-title"><div class="section-head"><h2 id="scoreboard-title">The recorded scoreboard.</h2><span class="hint">Measured data, not promises.</span></div><p id="scoreboard-state" class="state" role="status">Loading scoreboard…</p><dl class="metrics"><div class="metric"><dt>Cost / shipped clip</dt><dd id="cost-clip">N/A</dd><small id="cost-note">Cohort cost, including failed overhead</small></div><div class="metric"><dt>Lead quality / dollar</dt><dd id="efficiency">N/A</dd><small>Q/$ · higher is better</small></div><div class="metric"><dt>Render QA pass rate</dt><dd id="qa-rate">N/A</dd><small id="qa-note">Known QA results only</small></div><div class="metric"><dt>Lead Judge J</dt><dd id="judge-score">N/A</dd><small>Normalized 0–1 · not render QA</small></div><div class="metric"><dt>Ticket → first PR coverage</dt><dd id="factory-time">N/A</dd><small>Median minutes · recorded scope coverage</small></div></dl><p class="hint">QA pass is not first-try pass. Ticket → PR measures first recorded PR-title scope coverage, not completion, delivery, or merge.</p><p id="factory-note" class="hint">Recorded scope samples: N/A</p></section>
+<section class="section story"><div><p class="eyebrow">The factory behind the factory</p><h2>Agents wrote the code.<br>The PR is the receipt.</h2><p class="muted">8090 Software Factory connects product intent to inspectable implementation. FrameFoundry is the video factory built through that workflow.</p></div><div class="story-path"><p class="eyebrow">Ticket → work order → PR</p><p>Scope becomes a work order. Coding agents implement the pipeline and open a pull request for review.</p><p><a href="https://github.com/mappmechanic/frame-foundry/pull/1" target="_blank" rel="noopener noreferrer">Inspect the actual implementation PR #1 ↗</a></p><p class="hint" style="margin-top:12px">A pull request is review evidence, not a claim of merged or delivered work.</p></div></section>
+<section class="section cta"><div><h2>See the output. Inspect the evidence.</h2><p class="muted">Recorded clips, contact sheets, quality scores, and costs.</p></div><a class="button" href="/studio">Open recorded studio <span aria-hidden="true">↗</span></a></section><noscript><p class="warning">JavaScript is needed to read the exported demo files. Scores and media are N/A while it is disabled.</p></noscript></main><footer><div class="wrap">FrameFoundry · Built with 8090 Software Factory · Static, recorded demo. No rendering on this site.</div></footer><script>
+'use strict';
+const byId = id => document.getElementById(id);
+const object = value => value !== null && typeof value === 'object' && !Array.isArray(value) ? value : {};
+const array = value => Array.isArray(value) ? value : [];
+const number = value => typeof value === 'number' && Number.isFinite(value);
+const unit = value => number(value) && value >= 0 && value <= 1;
+const amount = value => number(value) && value >= 0;
+const count = value => Number.isInteger(value) && value >= 0 ? String(value) : 'N/A';
+const score = value => unit(value) ? value.toFixed(3) : 'N/A';
+const money = value => amount(value) ? '$' + value.toFixed(4) : 'N/A';
+const percent = value => unit(value) ? (value * 100).toFixed(1) + '%' : 'N/A';
+const yesno = value => value === true ? 'Pass' : value === false ? 'Fail' : 'N/A';
+const safeId = value => typeof value === 'string' && /^[a-z0-9][a-z0-9_-]{0,79}$/.test(value);
+// Public filenames are an exact allowlist, never arbitrary exporter-provided URLs.
+function mediaPath(id, value, filename) {
+  const expected = '/runs/' + id + '/' + filename;
+  return safeId(id) && value === expected ? expected : null;
+}
+function publicText(value) {
+  if (typeof value !== 'string' || !value.trim()) return 'N/A';
+  // Do not echo local filesystem paths, credentials, URLs, or unbounded freeform text.
+  if (/[\/\\]|(?:token|password|secret|api[_ -]?key)\s*[:=]/i.test(value)) return 'Details withheld';
+  return value.slice(0, 240);
+}
+const put = (id, value) => { byId(id).textContent = value; };
+async function getJSON(path) {
+  if (!/^\/runs\/(?:index\.json|scoreboard\.json|[a-z0-9][a-z0-9_-]{0,79}\/run\.json)$/.test(path)) throw new Error('Unsafe public path');
+  const response = await fetch(path, {method:'GET', credentials:'omit', redirect:'error', cache:'no-cache'});
+  if (!response.ok) throw new Error('Recorded data unavailable');
+  const data = await response.json();
+  if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Invalid recorded data');
+  return data;
+}
+function runsFrom(data) {
+  if (data.schema_version !== '1.0' || data.mode !== 'recorded-demo' || !Array.isArray(data.runs)) throw new Error('Invalid run index');
+  const seen = new Set();
+  return data.runs.filter(run => {
+    if (!run || !safeId(run.id) || seen.has(run.id) || !mediaPath(run.id, run.data_url, 'run.json')) return false;
+    seen.add(run.id); return true;
+  }).sort((a,b) => {
+    const time = r => typeof r.created_at === 'string' && Number.isFinite(Date.parse(r.created_at)) ? Date.parse(r.created_at) : 0;
+    return time(b) - time(a) || b.id.localeCompare(a.id);
+  });
+}
+function leadRun(data, runs) {
+  return runs.find(run => run.id === data.lead_run_id) || runs.find(run => run.id === data.latest_run_id) || runs[0];
+}
+function clearMedia() {
+  const video = byId('run-video');
+  video.pause(); video.removeAttribute('src'); video.load();
+  put('video-state', 'Recorded video: N/A'); byId('video-state').hidden = false;
+}
+function setVideo(run) {
+  clearMedia();
+  const path = mediaPath(run.id, run.video_url, 'finished.mp4');
+  if (!path) return;
+  put('video-state', 'Loading recorded video…');
+  const video = byId('run-video');
+  video.onloadedmetadata = () => { if (video.getAttribute('src') === path) byId('video-state').hidden = true; };
+  video.onerror = () => { if (video.getAttribute('src') === path) { put('video-state', 'Recorded video unavailable'); byId('video-state').hidden = false; } };
+  video.setAttribute('src', path); video.load();
+}
+
+let landingLead = null;
+async function loadRuns() {
+  try {
+    const data = await getJSON('/runs/index.json');
+    const runs = runsFrom(data); landingLead = leadRun(data, runs) || null;
+    if (!landingLead) { clearMedia(); put('index-state', 'No recorded clips exported yet.'); return; }
+    setVideo(landingLead); put('lead-label', 'Recorded output · ' + landingLead.id);
+    put('index-state', 'Recorded demo · ' + runs.length + ' available clip(s)');
+    put('efficiency', amount(object(landingLead.cost).quality_per_dollar) ? landingLead.cost.quality_per_dollar.toFixed(3) : 'N/A');
+    put('judge-score', score(object(landingLead.scores).J));
+  } catch (_) { clearMedia(); put('index-state', 'Recorded runs unavailable. No clips or scores have been generated.'); }
+}
+async function loadScoreboard() {
+  try {
+    const data = await getJSON('/runs/scoreboard.json');
+    if (data.schema_version !== '1.0' || !data.cohort || !data.factory) throw new Error('Invalid scoreboard');
+    const cohort = object(data.cohort), factory = object(data.factory);
+    put('cost-clip', cohort.cost_complete === true && cohort.shipped > 0 ? money(cohort.cost_per_shipped) : 'N/A');
+    put('cost-note', cohort.cost_complete === true ? (cohort.estimated === true ? 'Estimated cohort cost; includes failed overhead' : 'Cohort cost; includes failed overhead') : 'Incomplete cost · known subtotal ' + money(cohort.known_subtotal));
+    put('qa-rate', cohort.qa_known > 0 ? percent(cohort.qa_pass_rate) : 'N/A');
+    put('qa-note', count(cohort.qa_passed) + ' / ' + count(cohort.qa_known) + ' known QA results');
+    put('factory-time', amount(factory.ticket_to_pr_minutes) ? factory.ticket_to_pr_minutes.toFixed(1) + ' min' : 'N/A');
+    put('factory-note', 'Recorded scope samples: ' + count(factory.sample_count) + '. Basis: median first recorded PR-title coverage; not completion or delivery.');
+    put('scoreboard-state', 'Recorded cohort · ' + count(cohort.episode_count) + ' episode(s), ' + count(cohort.shipped) + ' shipped.');
+  } catch (_) { put('scoreboard-state', 'Scoreboard unavailable. Missing measurements remain N/A.'); }
+}
+loadRuns(); loadScoreboard();
+</script></body></html>
