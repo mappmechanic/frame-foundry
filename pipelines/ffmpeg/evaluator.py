@@ -366,7 +366,10 @@ def append_scoreboard(report, evals_root=None):
 def persist_report(report, episode_dir, evals_root=None):
     validate_eval_report(report)
     atomic_write_json(Path(episode_dir) / 'eval-report.json', report)
-    return append_scoreboard(report, evals_root)
+    appended=append_scoreboard(report, evals_root)
+    from .memory_loop import write_completed
+    write_completed(report,episode_dir)
+    return appended
 
 
 def budget_summary(root):
@@ -483,6 +486,9 @@ def evaluate_episode(episode_dir, *, provider=None, evals_root=None, labels=None
                     evaluation_seconds=round(time.monotonic() - started, 3)),
         provenance=provenance(qa, analysis), first_try_passed=first_try,budget=budget_summary(root),
         limitations=list(dict.fromkeys(limitations)))
+    from .memory_loop import report_memory
+    memory=report_memory(root)
+    if memory is not None:report['memory']=memory
     validate_eval_report(report)
     if persist:
         persist_report(report, root, evals_root)

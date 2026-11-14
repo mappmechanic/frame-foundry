@@ -19,6 +19,10 @@ class EpisodeContext:
     target_seconds: float | None = None
     aspect_override: str | None = None
     decider_mode: str = 'llm'
+    memory_enabled: bool = False
+    memory_backend: str = 'auto'
+    memory_root: Path | None = None
+    memory_selection: dict | None = None
     overlay_mode: bool | None = None
     overlay_sections: list[str] = field(default_factory=list)
 
