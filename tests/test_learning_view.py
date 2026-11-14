@@ -120,3 +120,19 @@ def test_local_scoreboard_reads_private_curve_and_escapes_ids(tmp_path):
     assert 'unknown' in out and 'N/A' in out and 'Unknown is N/A, not zero' in out
     (tmp_path/'evals/learning-curves/latest.json').unlink()
     assert 'Evaluation pending' in render_html([],episodes_root=episodes)
+
+
+@pytest.mark.parametrize('kind', ['same-id','unknown-score','unknown-cost'])
+def test_incomplete_or_self_pair_never_comparable(kind):
+    curve=synthetic_curve()
+    if kind=='same-id':curve['arms']['memory_off'][0]['episode_id']='synthetic-on'
+    if kind=='unknown-score':curve['arms']['memory_on'][0]['J']=None
+    if kind=='unknown-cost':curve['arms']['memory_on'][0]['cost_status']='unknown'
+    delta=public_projection(curve,['synthetic-on','synthetic-off'])['deltas'][0]
+    assert delta==dict(iteration=1,comparable=False,J=None,Q=None,model_usd=None)
+
+
+@pytest.mark.parametrize('status', ['free',[],{}])
+def test_unknown_cost_enum_cannot_reach_public_data(status):
+    curve=synthetic_curve();curve['arms']['memory_on'][0]['cost_status']=status
+    assert public_projection(curve,['synthetic-on','synthetic-off'])['status']=='pending'

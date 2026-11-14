@@ -221,7 +221,7 @@ async function loadLearning() {
    for(const r of curve.arms[arm]){
     if(!r||!Number.isInteger(r.iteration)||r.iteration<0||r.iteration>10000||seen.has(r.iteration)||!['passed','failed','unavailable'].includes(r.status))throw Error();seen.add(r.iteration);
     const published=r.published===true&&r.status==='passed'&&safe(r.episode_id)&&allowed.has(r.episode_id)&&r.data_url===`/runs/${r.episode_id}/run.json`;
-    const clean={iteration:r.iteration,published,J:published&&unit(r.J)?r.J:null,Q:published&&unit(r.Q)?r.Q:null,model_usd:published&&['measured','estimated','complete','zero'].includes(r.cost_status)&&finite(r.model_usd)&&r.model_usd>=0?r.model_usd:null};
+    const clean={iteration:r.iteration,episode_id:published?r.episode_id:null,published,J:published&&unit(r.J)?r.J:null,Q:published&&unit(r.Q)?r.Q:null,model_usd:published&&['measured','estimated','complete','zero'].includes(r.cost_status)&&finite(r.model_usd)&&r.model_usd>=0?r.model_usd:null};
     arms[arm].push(clean);if(published)visible++;
     const tr=document.createElement('tr');if(!published)tr.className='learning-unpublished';
     const source=document.createElement('td');
@@ -234,7 +234,7 @@ async function loadLearning() {
   }
   const deltas=node('learning-deltas'), on=new Map(arms.memory_on.map(r=>[r.iteration,r])), off=new Map(arms.memory_off.map(r=>[r.iteration,r]));
   for(const i of [...new Set([...on.keys(),...off.keys()])].sort((a,b)=>a-b)){
-   const a=on.get(i),b=off.get(i),declared=curve.deltas.find(d=>d&&d.iteration===i),comparable=declared?.comparable===true&&a?.published&&b?.published;
+   const a=on.get(i),b=off.get(i),declared=curve.deltas.find(d=>d&&d.iteration===i),comparable=declared?.comparable===true&&a?.published&&b?.published&&a.episode_id!==b.episode_id&&['J','Q','model_usd'].every(k=>a[k]!==null&&b[k]!==null);
    const delta=k=>comparable&&a[k]!==null&&b[k]!==null?(a[k]-b[k]).toFixed(4):'N/A';
    const li=document.createElement('li');li.textContent=`Iteration ${i}: ${comparable?'comparable recorded pair':'incomparable / incomplete'} · ΔJ ${delta('J')} · ΔQ ${delta('Q')} · ΔUSD ${delta('model_usd')} (on − off)`;deltas.append(li);
   }

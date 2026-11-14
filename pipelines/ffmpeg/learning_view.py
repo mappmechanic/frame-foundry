@@ -250,7 +250,8 @@ def public_projection(curve, allowed_ids):
     declared = {d['iteration']: d['comparable'] for d in curve['deltas']}
     for i in sorted(on.keys() | off.keys()):
         a, b = on.get(i), off.get(i)
-        comparable = bool(declared.get(i) and a and b and a['published'] and b['published'] and a['episode_id'] != b['episode_id'])
+        comparable = bool(declared.get(i) and a and b and a['published'] and b['published'] and a['episode_id'] != b['episode_id']
+                          and all(a[k] is not None and b[k] is not None for k in ('J', 'Q', 'model_usd')))
         d = dict(iteration=i, comparable=comparable)
         for k in ('J', 'Q', 'model_usd'):
             d[k] = a[k] - b[k] if comparable and a[k] is not None and b[k] is not None else None

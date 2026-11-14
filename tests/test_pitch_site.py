@@ -63,13 +63,19 @@ const assert=require('node:assert/strict'),fs=require('node:fs');
  const evidence=process.env.PITCH_EVIDENCE_DIR||'/tmp/framefoundry-pitch-evidence';fs.mkdirSync(evidence,{recursive:true});
  // Every value below is synthetic offline test data, not a real run or score.
  const run=(id,time,Q,usd,status='measured')=>({id,created_at:time,qa_passed:true,video_url:`/runs/${id}/finished.mp4`,scores:{Q,J:id.endsWith('old')?.7:.8},cost:{usd,status}});
- let mode='valid',media='valid',policy={schema_version:'1.0',status:'pending'};
+ let policyRoute='valid',mode='valid',media='valid',policy={schema_version:'1.0',status:'pending'};
  const runs=[run('test-only-old','2026-01-01T00:00:00Z',.5,2),run('test-only-new','2026-01-02T00:00:00Z',.8,1)];
  let index={schema_version:'1.0',mode:'recorded-demo',generated_at:'2026-01-03T00:00:00Z',lead_run_id:'test-only-old',runs};
  let board={schema_version:'1.0',generated_at:'2026-01-03T00:00:00Z',cohort:{episode_count:3,shipped:2,cost_complete:true,estimated:false,cost_per_shipped:2.5,known_subtotal:5,qa_known:3,qa_passed:2},factory:{work_order_count:7,pr_count:1,commit_count:12,ticket_to_pr_minutes:15,sample_count:7,pr_url:'https://github.com/mappmechanic/frame-foundry/pull/1'}};
  await page.route('**/runs/**',async route=>{
   const path=new URL(route.request().url()).pathname;
-  if(path==='/runs/policy-comparison.json')return route.fulfill({contentType:'application/json',body:JSON.stringify(policy)});
+  if(path==='/runs/policy-comparison.json'){
+   if(policyRoute==='missing')return route.fulfill({status:404,body:'missing'});
+   if(policyRoute==='malformed')return route.fulfill({contentType:'application/json',body:'{invalid'});
+   if(policyRoute==='fetch-failed')return route.abort('failed');
+   if(policyRoute==='loading')return;
+   return route.fulfill({contentType:'application/json',body:JSON.stringify(policy)});
+  }
   if(path.endsWith('.mp4'))return route.fulfill({status:media==='valid'?200:404,contentType:'video/mp4',body:media==='valid'?fs.readFileSync(process.env.PITCH_VIDEO):Buffer.from('missing')});
   if(mode==='fetch-failed')return route.abort('failed');
   if(mode==='loading')return; // held request intentionally tests the loading state
@@ -153,7 +159,13 @@ const assert=require('node:assert/strict'),fs=require('node:fs');
   if(bad==='missing-arm')policy.baseline=null;
   await open();await policyReady();assert.match(await text('policy-state'),/Pending evaluation/);assert.equal(await page.locator('#policy-observations a').count(),0);
  }
- policy={schema_version:'1.0',status:'pending'};
+ for(policyRoute of ['missing','malformed','fetch-failed','loading']){
+  await page.goto(origin+'/pitch',{waitUntil:'domcontentloaded'});
+  if(policyRoute!=='loading')await policyReady();
+  assert.match(await text('policy-state'),policyRoute==='loading'?/Loading/:/Pending evaluation/);
+  assert.equal(await page.locator('#policy-observations a').count(),0);
+ }
+ policyRoute='valid';policy={schema_version:'1.0',status:'pending'};
  // Optional comparison snapshots must not turn unsupported evidence into a win.
  for(const comparison of [null,{}, {status:'recorded',qualified:false},
    {status:'recorded',qualified:true,arms:{llm:{episode_id:'test-only-old',q_per_dollar:11.9},decisions:{episode_id:'test-only-new',q_per_dollar:40.6}}}]){
