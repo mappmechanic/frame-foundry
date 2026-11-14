@@ -70,6 +70,12 @@ def run_episode(footage_dir,goal,*,episodes_root,episode_id=None,transcript_fixt
             if budget_note:spec['assumptions'].append('AI unavailable: '+budget_note)
             for index in range(1,4):
                 try:
+                    # A Planner repair must not erase source-level ASR limitations.
+                    if router is not None:
+                        degraded=[audit['limitation'] for audit in router.sources.values() if audit.get('status')=='degraded']
+                        if degraded:
+                            spec['coverage']['status']='partial'
+                            spec['coverage']['limitations'].extend(note for note in degraded if note not in spec['coverage']['limitations'])
                     save_state(ctx,'assembler');result=assemble(ctx,spec,analysis,attempt=index);last_result=result
                     amended=read_json(result.spec_path);save_state(ctx,'validator')
                     report=validate_candidate(ctx,result,amended,attempts=attempts,judge_provider=None)

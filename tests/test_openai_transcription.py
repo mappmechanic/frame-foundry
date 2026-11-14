@@ -2,6 +2,7 @@
 from pathlib import Path
 from decimal import Decimal
 import io
+import os
 import json
 import wave
 import pytest
@@ -60,7 +61,7 @@ def test_multipart_words_cost_cache_and_source_remap(source,tmp_path):
     assert p.sources['renamed']['cached'] and not (ep2/'llm-usage.json').exists()
 
 
-@pytest.mark.parametrize('bad',[dict(words=None),dict(words=[]),dict(words=[dict(word='x',start=0,end=0)]),dict(words=[dict(word='x',start=-1,end=1)]),dict(words=[dict(word='x',start=1,end=999)]),dict(words=[None])])
+@pytest.mark.parametrize('bad',[dict(words=None),dict(words=[]),dict(words=[dict(word='x',start=1,end=.99)]),dict(words=[dict(word='x',start=-1,end=1)]),dict(words=[dict(word='x',start=1,end=999)]),dict(words=[None])])
 def test_missing_or_invalid_words_never_become_verified_empty(source,tmp_path,bad):
     p=provider(source,[],data=response(source,**bad))
     with pytest.raises(StageError) as error:p.words(source,episode_dir=tmp_path)
@@ -169,3 +170,104 @@ def test_duration_billed_cost_breakdown_preserves_unknown_failure(tmp_path):
     (tmp_path/'llm-usage.json').write_text(json.dumps(dict(version=2,calls=[row])))
     cost,_=model_cost(tmp_path,.5)
     assert cost['asr_usd'] is None and cost['usd'] is None and cost['quality_per_dollar'] is None
+
+
+def test_az_0305_reported_zero_length_yeah():
+    # Exact reported response fields and offending word; the other word timings
+    # were not supplied in the bug report, so do not invent them as live evidence.
+    data={'duration':8.05,'text':"It's good, yeah, I like it.",
+          'words':[{'word':'yeah','start':7.36,'end':7.36}]}
+    words=asr._words(data,dict(source_id='source-0003',duration_ms=8050))
+    assert words==[dict(source_id='source-0003',text='yeah',start_ms=7360,end_ms=7380,confidence=None)]
+
+
+@pytest.mark.parametrize('rows,expected',[
+    ([('yeah',7.36,7.36),('I',7.37,7.5)], [('yeah',7360,7370),('I',7370,7500)]),
+    ([('yeah',7.36,7.36),('I',7.36,7.5)], [('yeah I',7360,7500)]),
+    ([('yeah',7.36,7.4),('I',7.4,7.5)], [('yeah',7360,7400),('I',7400,7500)]),
+    ([('yeah',7.36,7.4),('I',7.39,7.5)], [('yeah',7360,7390),('I',7390,7500)]),
+    ([('yeah',7.36,7.5),('I',7.4,7.45)], [('yeah',7360,7400),('I',7400,7500)]),
+    ([('yeah',7.36,7.5),('I',7.35,7.5)], [('yeah I',7360,7500)]),
+    ([('yeah',8.04,8.04)], [('yeah',8040,8050)]),
+    ([('yeah',8.05,8.05)], [('yeah',8030,8050)]),
+    ([('yeah',8.03,8.07)], [('yeah',8030,8050)]),
+    ([('yeah',7.3601,7.3602)], [('yeah',7360,7380)]),
+])
+def test_quantized_neighbors_and_source_edges(rows,expected):
+    data=dict(text=' '.join(w for w,_,_ in rows),words=[dict(word=w,start=a,end=b) for w,a,b in rows])
+    words=asr._words(data,dict(source_id='source-0003',duration_ms=8050))
+    assert [(w['text'],w['start_ms'],w['end_ms']) for w in words]==expected
+    assert all(0<=w['start_ms']<w['end_ms']<=8050 for w in words)
+    assert all(a['end_ms']<=b['start_ms'] for a,b in zip(words,words[1:]))
+    assert asr._words(dict(text=data['text'],words=[dict(word=w['text'],start=w['start_ms']/1000,end=w['end_ms']/1000) for w in words]),dict(source_id='source-0003',duration_ms=8050))==words
+
+
+@pytest.mark.parametrize('start,end', [(-.001,.01),(8.06,8.06),(8,8.071),(7.36,7.359),(float('nan'),8),(True,1)])
+def test_normalization_still_rejects_invalid_ranges(start,end):
+    with pytest.raises(ValueError):
+        asr._words(dict(text='yeah',words=[dict(word='yeah',start=start,end=end)]),dict(source_id='source-0003',duration_ms=8050))
+
+
+def test_invalid_remote_source_degrades_without_cache_and_preserves_charge(source,tmp_path):
+    p=provider(source,[],data=response(source,words=[dict(word='bad',start=1,end=.5)]))
+    router=asr.TranscriptionRouter(EpisodeContext('degraded',tmp_path,'goal'),mode='openai');router.remote=p
+    assert router.words(source)==[]
+    audit=router.sources[source['source_id']]
+    assert audit['status']=='degraded' and audit['word_count']==0 and not audit['cached']
+    assert 'unverified' in audit['limitation'] and 'original audio retained' in audit['limitation']
+    row=read_json(tmp_path/'llm-usage.json')['calls'][0]
+    assert row['status']=='failed' and row['cost_usd']>0
+    assert not list((Path(os.environ['FRAMEFOUNDRY_CACHE_DIR'])/'transcription').glob('*.json'))
+
+
+def test_router_does_not_degrade_budget_failure(source,tmp_path,monkeypatch):
+    monkeypatch.setenv('FRAMEFOUNDRY_EPISODE_API_BUDGET_USD','0.000001')
+    router=asr.TranscriptionRouter(EpisodeContext('budget',tmp_path,'goal'),mode='openai')
+    router.remote=provider(source,[])
+    with pytest.raises(accounting.ProviderBudgetError):router.words(source)
+    assert not router.sources
+
+
+def test_one_invalid_source_continues_to_partial_render_without_false_word_gate(media,tmp_path,monkeypatch):
+    from pipelines.ffmpeg.cli import run_episode
+    from tests.test_run_evals import provider_transport
+    api_calls=[]
+    def send(url,headers,body,timeout):
+        start=body.index(b'RIFF')
+        with wave.open(io.BytesIO(body[start:])) as wav:duration=wav.getnframes()/wav.getframerate()
+        api_calls.append(duration)
+        words=[dict(word='hello',start=.2,end=.6),dict(word='family',start=.9,end=1.4)]
+        if len(api_calls)==3:words=[dict(word='invalid',start=1,end=.5)]
+        return 200,json.dumps(dict(text='hello family',duration=duration,words=words)).encode()
+    monkeypatch.setenv('OPENAI_API_KEY','offline-fake-key')
+    monkeypatch.setattr(accounting,'_transport',send)
+    planner,calls=provider_transport()
+    qa=run_episode(media[0],'Create a 10 second family-trip teaser',episodes_root=tmp_path/'episodes',episode_id='asr-partial',provider=planner,evals_root=tmp_path/'evals',asr_provider='openai')
+    root=tmp_path/'episodes'/'asr-partial';e=read_json(root/'eval-report.json');analysis=read_json(root/'analysis.json')
+    assert len(api_calls)==3
+    assert qa['passed'] and qa['result']=='partial' and qa['error'] is None,qa
+    assert (root/'finished.mp4').is_file() and (root/'contact-sheet.jpg').is_file()
+    degraded=[sid for sid,audit in analysis['transcription_sources'].items() if audit.get('status')=='degraded']
+    assert len(degraded)==1 and analysis['sources'][2]['has_audio']
+    assert all(w['source_id']!=degraded[0] for w in analysis['words'])
+    assert any('ASR_FAILED' in limitation and degraded[0] in limitation for limitation in qa['coverage']['limitations'])
+    gate=next(c for c in e['gates']['checks'] if c['name']=='word_cut_integrity')
+    assert gate['status']=='not_run' and 'degraded' in gate['reason']
+    assert e['scores']['G']==0 and e['scores']['Q']==0 and e['scores']['J'] is None
+    assert [role for role,_ in calls]==['planner']
+    assert len([row for row in qa['ai_usage'] if row['role']=='transcription'])==3
+    assert e['model_cost']['known_usd']==pytest.approx(sum(row['cost_usd'] for row in qa['ai_usage']))
+
+
+def test_zero_length_success_is_cached_and_remapped(source,tmp_path):
+    calls=[]
+    p=provider(source,calls,data=response(source,text='yeah',words=[dict(word='yeah',start=.9,end=.9)]))
+    ep=tmp_path/'one';ep.mkdir()
+    words=p.words(source,episode_dir=ep)
+    assert words[0]['start_ms']==900 and words[0]['end_ms']==920
+    assert read_json(ep/'llm-usage.json')['calls'][0]['status']=='success'
+    other=dict(source,source_id='new-id');second=tmp_path/'two';second.mkdir()
+    cached=p.words(other,episode_dir=second)
+    assert len(calls)==1 and cached[0]['source_id']=='new-id'
+    assert cached[0]['start_ms']==900 and cached[0]['end_ms']==920
+    assert p.sources['new-id']['cached'] and not (second/'llm-usage.json').exists()

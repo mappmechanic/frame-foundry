@@ -577,6 +577,14 @@ def _word_check(root, analysis, shots, checks, limitations):
     if status in ('openai_asr','mixed_asr'):
         covered=(analysis or {}).get('transcription_sources',{})
         expected={s['source_id'] for s in analysis.get('sources',[]) if s.get('has_audio')}
+        degraded=[sid for sid in expected if isinstance(covered.get(sid),dict) and covered[sid].get('status')=='degraded']
+        if degraded:
+            notes=[covered[sid].get('limitation','ASR evidence unavailable: '+sid) for sid in sorted(degraded)]
+            limitations.extend(notes)
+            checks['word_cut_integrity']=check('word_cut_integrity','not_run',
+                'ASR degraded; word integrity unverified for: '+', '.join(sorted(degraded)),
+                dict(transcription_status=status,degraded_sources=sorted(degraded)))
+            return
         if not expected.issubset(covered):
             checks['word_cut_integrity']=check('word_cut_integrity','not_run','ASR source coverage incomplete')
             return

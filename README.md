@@ -65,6 +65,16 @@ transcription in total model cost.
 
 `--visual-only` is an explicit **no-ASR diagnostic mode**, not the scoring demo.
 It does not certify speech integrity: word gate `not_run`, G=0/Q=0, no judge.
+Whisper-1 zero-length words receive up to 20 ms within the next onset/source bounds;
+equal onsets share a protected interval, and touching/overlapping neighbors are
+normalized without discarding their speech coverage. Reversed or genuinely
+out-of-range times remain invalid. Successful source caches remain reusable.
+If an OpenAI source still fails ASR, the run continues with no word entries for
+that source, keeps its original audio, and records `status=degraded` plus a
+source-specific coverage limitation. This is **not verified silence**: the
+word-integrity gate remains unavailable, G/Q=0 and J unavailable rather than
+claiming a fully scored clip. Budget/configuration/dependency failures still stop.
+
 Remove that flag to use real ASR and make word/judge gates eligible. No fixture
 transcript or fabricated score is substituted for ASR or a live judge.
 

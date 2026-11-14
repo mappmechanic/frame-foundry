@@ -318,6 +318,15 @@
               "word_count": {
                 "type": "integer",
                 "minimum": 0
+              },
+              "status": {
+                "enum": [
+                  "degraded"
+                ]
+              },
+              "limitation": {
+                "type": "string",
+                "minLength": 1
               }
             },
             "required": [
@@ -325,6 +334,33 @@
               "model",
               "cached",
               "word_count"
+            ],
+            "allOf": [
+              {
+                "if": {
+                  "required": [
+                    "status"
+                  ],
+                  "properties": {
+                    "status": {
+                      "const": "degraded"
+                    }
+                  }
+                },
+                "then": {
+                  "required": [
+                    "limitation"
+                  ],
+                  "properties": {
+                    "cached": {
+                      "const": false
+                    },
+                    "word_count": {
+                      "const": 0
+                    }
+                  }
+                }
+              }
             ]
           }
         }

@@ -42,7 +42,14 @@ def _source_hash(path):
 
 
 def _words(data,source):
-    """Reject missing, invented or malformed word-time evidence, including cache data."""
+    """Normalize quantized real word evidence without inventing recognized text.
+
+    Zero-length words get up to 20ms, bounded by the next onset and source end.
+    Equal onsets share one protected interval with their text retained. Neighbor
+    overlaps are clamped at the next onset, transferring any longer tail so the
+    union of recognized speech remains protected. Reversed/out-of-source times
+    and malformed/missing evidence still fail, including on cache reads.
+    """
     if not isinstance(data,dict):raise ValueError('Invalid transcript')
     rows=data.get('words');text=data.get('text')
     if not isinstance(rows,list) or not isinstance(text,str):raise ValueError('Word evidence missing')
@@ -53,14 +60,31 @@ def _words(data,source):
         token=row.get('word');a,b=row.get('start'),row.get('end')
         if not isinstance(token,str) or not token.strip():raise ValueError('Invalid word')
         if any(isinstance(t,bool) or not isinstance(t,(int,float)) or not math.isfinite(t) for t in (a,b)):raise ValueError('Invalid time')
-        if not 0<=a<b<=(duration+20)/1000:raise ValueError('Invalid source time')
-        start,end=round(a*1000),round(b*1000)
-        # Whisper word times are quantized. A <=20ms end overshoot can be
-        # clamped to the actual uploaded source boundary, never padded/invented.
-        if end<=duration+20:end=min(end,duration)
-        if a<0 or not 0<=start<end<=duration or start<last_start:raise ValueError('Out-of-range or unordered word')
-        words.append(dict(source_id=source['source_id'],text=token.strip(),start_ms=start,end_ms=end,confidence=None))
+        if not 0<=a<=b or a>duration/1000 or b>(duration+20)/1000:raise ValueError('Invalid source time')
+        start,end=round(a*1000),min(round(b*1000),duration)
+        # Bound backwards onset jitter to the model's 20ms quantization step.
+        if start<last_start-20:raise ValueError('Reversed word order')
+        start=max(start,last_start)
         last_start=start
+        # A point at EOF has no forward room: protect the last available 20ms.
+        if start==duration:
+            start=max(0,duration-20,words[-1]['start_ms'] if words else 0)
+        if not 0<=start<duration:raise ValueError('Out-of-range word')
+        end=max(start,end)
+        if words and start==words[-1]['start_ms']:
+            words[-1]['text']+=' '+token.strip()
+            words[-1]['end_ms']=max(words[-1]['end_ms'],end)
+        else:
+            words.append(dict(source_id=source['source_id'],text=token.strip(),start_ms=start,end_ms=end,confidence=None))
+    for index,word in enumerate(words):
+        next_word=words[index+1] if index+1<len(words) else None
+        bound=next_word['start_ms'] if next_word else duration
+        if next_word and word['end_ms']>bound:
+            # Keep the union protected even for a contained/overlapping token.
+            next_word['end_ms']=max(next_word['end_ms'],word['end_ms'])
+        end=word['end_ms'] if word['end_ms']>word['start_ms'] else word['start_ms']+20
+        word['end_ms']=min(end,bound,duration)
+        if word['end_ms']<=word['start_ms']:raise ValueError('No available word interval')
     return words
 
 
@@ -190,6 +214,15 @@ class TranscriptionRouter:
             try:self.remote=OpenAITranscriber.from_env()
             except accounting.ProviderError as exc:raise StageError('ASR_CONFIG_INVALID','refinery',str(exc),source['source_id']) from None
         if self.remote is None:raise StageError('DEPENDENCY_MISSING','refinery','WhisperX is unavailable and no OpenAI transcription key is configured',source['source_id'])
-        words=self.remote.words(source,episode_dir=self.ctx.episode_dir)
+        try:
+            words=self.remote.words(source,episode_dir=self.ctx.episode_dir)
+        except StageError as exc:
+            if exc.code!='ASR_FAILED':raise
+            # The paid/possibly paid failure remains in the provider ledger. Do
+            # not cache, retry, mute original audio, or claim verified silence.
+            self.sources[source['source_id']]=dict(provider='openai',model=MODEL,
+                cached=False,word_count=0,status='degraded',
+                limitation='ASR_FAILED for '+source['source_id']+' ('+Path(source['path']).name+'): no verified word timestamps; original audio retained, speech coverage and word-cut integrity unverified')
+            return []
         self.sources[source['source_id']]=self.remote.sources[source['source_id']]
         return words
