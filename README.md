@@ -15,7 +15,19 @@ python3 -m venv .venv
 
 The console entry point is `.venv/bin/framefoundry`. Editable installation from
 this checkout keeps the bundled `schemas/` and `contracts/` available. Lightweight
-verification uses Python 3.13; CI uses 3.12. FFmpeg is an external prerequisite.
+verification covers Python 3.13 and 3.14; CI covers Linux 3.12/3.14 and Mac 3.14. FFmpeg is an external prerequisite.
+
+### Python 3.14 / OTIO metadata compatibility
+
+The assembler normalizes nested metadata to plain JSON values, then attaches it
+through OTIO's native JSON reader. It never passes Timeline/Clip metadata mappings
+to OTIO constructors, avoiding the reported Mac `RuntimeError: bad any cast` path.
+Source intervals, bool flags and selection mappings retain their types through
+`.otio` save/readback. OTIO remains pinned at 0.18.1; no Python downgrade is needed
+for this construction path. Python 3.14 verification in the development workspace
+uses Linux; the exact Mac mini/Python 3.14/FFmpeg 8.1 environment still needs its
+local rerun, with a Mac Python 3.14 CI job added to catch platform regressions.
+
 
 ### Local speech recognition
 

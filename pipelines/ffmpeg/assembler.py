@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from collections.abc import Mapping, Sequence
+import json
+from numbers import Integral, Real
 from pathlib import Path
 import math
 
@@ -41,6 +44,58 @@ def pad_word_interval(start_ms: int, end_ms: int, duration_ms: int,
 def _range(start, end):
     return otio.opentime.TimeRange(otio.opentime.RationalTime(start, 1000),
                                  otio.opentime.RationalTime(end - start, 1000))
+
+
+def _plain_metadata(value):
+    """Keep only JSON primitives before crossing the OTIO native boundary.
+
+    bool must precede Integral because it is an int subclass. Nested mappings
+    and tuples become plain dict/list objects, never OTIO/Python proxy values.
+    """
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return bool(value)
+    if isinstance(value, str):
+        return str(value)
+    if isinstance(value, Integral):
+        result = int(value)
+        if not -(2**63) <= result < 2**63:
+            raise ValueError('Metadata integer exceeds OTIO int64 range')
+        return result
+    if isinstance(value, Real):
+        result = float(value)
+        if not math.isfinite(result):
+            raise ValueError('Metadata numbers must be finite')
+        return result
+    if isinstance(value, Mapping):
+        if any(not isinstance(key, str) for key in value):
+            raise TypeError('Metadata keys must be strings')
+        return {str(key): _plain_metadata(item) for key, item in value.items()}
+    if isinstance(value, Sequence) and not isinstance(value, (bytes, bytearray, memoryview)):
+        return [_plain_metadata(item) for item in value]
+    raise TypeError('Unsupported metadata value type')
+
+
+def _with_metadata(obj, metadata):
+    """Attach metadata with OTIO's native JSON reader, not constructor PyAny casts.
+
+    Some OTIO 0.18.1 Mac/Python builds raise ``bad any cast`` converting a Python
+    mapping passed as constructor metadata. Normalizing its scalar values alone
+    cannot fix a mapping-conversion failure. Construct without metadata, then
+    let OTIO deserialize its own canonical schema with plain JSON metadata.
+    This also handles Clip's nested selection mappings through the same boundary.
+    """
+    try:
+        clean = _plain_metadata(metadata)
+        if not isinstance(clean, dict):
+            raise TypeError('Metadata must be a mapping')
+        payload = json.loads(otio.adapters.write_to_string(obj, 'otio_json'))
+        payload['metadata'] = clean
+        return otio.adapters.read_from_string(json.dumps(payload, allow_nan=False), 'otio_json')
+    except Exception as exc:
+        raise StageError('METADATA_INVALID', 'assembler',
+                         'OTIO metadata normalization or native JSON construction failed') from exc
 
 
 def build_timeline(spec: dict, analysis: dict) -> tuple[otio.schema.Timeline, dict]:
@@ -85,7 +140,7 @@ def build_timeline(spec: dict, analysis: dict) -> tuple[otio.schema.Timeline, di
             previous['selections'].append(segment)
         else:
             groups.append(dict(source_id=sid, start_ms=a, end_ms=b, selections=[segment]))
-    timeline = otio.schema.Timeline(name=amended['episode_id'], metadata={
+    timeline = _with_metadata(otio.schema.Timeline(name=amended['episode_id']), {
         'schema_version': '1.0', 'aspect_ratio': amended['aspect_ratio'],
         'target_duration_ms': amended['target_duration_ms']})
     video = otio.schema.Track(name='V1', kind=otio.schema.TrackKind.Video)
@@ -106,8 +161,8 @@ def build_timeline(spec: dict, analysis: dict) -> tuple[otio.schema.Timeline, di
                         selection_mappings=mappings)
         reference = otio.schema.ExternalReference(target_url=source['path'],
                         available_range=_range(0, source['duration_ms']))
-        clip = otio.schema.Clip(name=f'cut-{index + 1:03d}', media_reference=reference,
-                               source_range=_range(a, b), metadata=metadata)
+        clip = _with_metadata(otio.schema.Clip(name=f'cut-{index + 1:03d}', media_reference=reference,
+                               source_range=_range(a, b)), metadata)
         video.append(clip)
         audio.append(clip.deepcopy())
         cursor += b - a

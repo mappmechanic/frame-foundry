@@ -136,3 +136,63 @@ def test_exact_word_edges_are_protected_even_at_selection_boundary(tmp_path):
     _, amended = assembler.build_timeline(spec, analysis)
     assert amended['segments'][0]['render_start_ms'] == 1820
     assert amended['segments'][0]['render_end_ms'] == 4220
+
+
+def test_metadata_avoids_constructor_mapping_cast_and_roundtrips(tmp_path, monkeypatch):
+    """Emulate the Mac 0.18.1 binding failure, including Clip's nested mappings."""
+    spec, analysis = narrative(tmp_path)
+    spec['segments'] = [selection('a', 1000, 4000, 'one'), selection('b', 0, 2000, 'two')]
+    original = deepcopy(spec)
+    constructors = {name: getattr(otio.schema, name) for name in ('Timeline', 'Clip')}
+    calls = []
+    for name, constructor in constructors.items():
+        def reject_metadata(*args, _name=name, _constructor=constructor, **kwargs):
+            calls.append((_name, kwargs.copy()))
+            if 'metadata' in kwargs:
+                raise RuntimeError('bad any cast')
+            return _constructor(*args, **kwargs)
+        monkeypatch.setattr(otio.schema, name, reject_metadata)
+    timeline, amended = assembler.build_timeline(spec, analysis)
+    path = tmp_path / 'roundtrip.otio'
+    otio.adapters.write_to_file(timeline, str(path))
+    saved = otio.adapters.read_from_file(str(path))
+    assert spec == original and calls and all('metadata' not in kw for _, kw in calls)
+    assert dict(saved.metadata) == dict(schema_version='1.0', aspect_ratio='9:16', target_duration_ms=5000)
+    assert type(saved.metadata['target_duration_ms']) is int
+    assert saved.metadata['aspect_ratio'] == amended['aspect_ratio']
+    for video, audio in zip(saved.tracks[0], saved.tracks[1]):
+        assert type(video.metadata['has_audio']) is bool and video.metadata['has_audio'] is True
+        assert assembler._plain_metadata(video.metadata) == assembler._plain_metadata(audio.metadata)
+        mappings = video.metadata['selection_mappings']
+        assert len(mappings) == 1
+        assert type(mappings[0]['timeline_start_ms']) is int
+        assert mappings[0]['segment_id'] == list(video.metadata['selection_ids'])[0]
+        assert video.source_range == audio.source_range
+        assert video.media_reference.target_url == audio.media_reference.target_url
+
+
+def test_metadata_normalizes_nested_subclasses_without_mutating_input():
+    from collections import UserDict
+    class Label(str): pass
+    class Count(int): pass
+    class Value(float): pass
+    metadata = UserDict({Label('name'): Label('clip'), 'count': Count(5), 'active': True,
+                         'nested': (UserDict({'fraction': Value(.5), 'missing': None}),)})
+    clean = assembler._plain_metadata(metadata)
+    assert type(clean) is dict and all(type(k) is str for k in clean)
+    assert type(clean['name']) is str and type(clean['count']) is int and type(clean['active']) is bool
+    assert type(clean['nested']) is list and type(clean['nested'][0]) is dict
+    assert type(clean['nested'][0]['fraction']) is float and clean['nested'][0]['missing'] is None
+    assert isinstance(metadata['nested'], tuple) and isinstance(metadata['count'], Count)
+    # Exercise the actual native reader for every supported scalar kind.
+    timeline = assembler._with_metadata(otio.schema.Timeline(name='plain'), clean)
+    parsed = json.loads(otio.adapters.write_to_string(timeline, 'otio_json'))
+    assert parsed['metadata'] == clean
+
+
+@pytest.mark.parametrize('metadata', [{'x': float('nan')}, {'x': float('inf')},
+                                       {'x': 2**63}, {1: 'invalid key'}, {'x': {1, 2}}])
+def test_metadata_rejects_non_json_or_non_otio_values(metadata):
+    with pytest.raises(StageError) as failure:
+        assembler._with_metadata(otio.schema.Timeline(), metadata)
+    assert failure.value.code == 'METADATA_INVALID'
